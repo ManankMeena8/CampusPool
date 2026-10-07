@@ -92,9 +92,9 @@ async function issueOtp(email) {
   await sendOtpEmail(email, code, OTP_TTL_MS / 60000);
 }
 
-async function createSession(user) {
+async function createSession(user, db = prisma) {
   const { token, tokenHash } = generateRefreshToken();
-  await prisma.refreshToken.create({
+  await db.refreshToken.create({
     data: {
       userId: user.id,
       tokenHash,
@@ -205,7 +205,10 @@ async function login({ email, password }) {
 
 async function refresh({ refreshToken }) {
   const tokenHash = sha256(refreshToken);
-  const stored = await prisma.refreshToken.findUnique({ where: { tokenHash } });
+  const stored = await prisma.refreshToken.findUnique({
+    where: { tokenHash },
+    include: { user: true },
+  });
   if (!stored) {
     throw new AppError('INVALID_REFRESH_TOKEN', 'Invalid refresh token', 401);
   }
@@ -221,15 +224,22 @@ async function refresh({ refreshToken }) {
     throw new AppError('REFRESH_TOKEN_EXPIRED', 'Refresh token expired. Log in again', 401);
   }
 
-  // Only one concurrent request can revoke the token; the loser is treated as a reuse.
-  const claimed = await prisma.refreshToken.updateMany({
-    where: { id: stored.id, revokedAt: null },
-    data: { revokedAt: new Date() },
-  });
-  if (claimed.count === 0) throw await reuse();
-
-  const user = await prisma.user.findUnique({ where: { id: stored.userId } });
-  return createSession(user);
+  // Revoke the old token and issue the new one in a single transaction: if issuing fails, the old
+  // token stays valid instead of the user being logged out. Only one concurrent request can win
+  // the revoke; the loser is treated as a reuse.
+  const session = await prisma.$transaction(
+    async (tx) => {
+      const claimed = await tx.refreshToken.updateMany({
+        where: { id: stored.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      if (claimed.count === 0) return null;
+      return createSession(stored.user, tx);
+    },
+    { timeout: 15000 },
+  );
+  if (!session) throw await reuse();
+  return session;
 }
 
 async function logout({ refreshToken }) {

@@ -38,6 +38,18 @@ describe('POST /auth/refresh', () => {
     expect(await prisma.refreshToken.count({ where: { revokedAt: null } })).toBe(0);
   });
 
+  it('lets only one of two simultaneous refreshes win, then ends all sessions', async () => {
+    const first = await createVerifiedUser(email);
+
+    const results = await Promise.all([refresh(first.refreshToken), refresh(first.refreshToken)]);
+
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses).toEqual([200, 401]);
+    const loser = results.find((r) => r.status === 401);
+    expect(loser.body.error.code).toBe('REFRESH_TOKEN_REUSED');
+    expect(await prisma.refreshToken.count({ where: { revokedAt: null } })).toBe(0);
+  });
+
   it('does not touch other users when one user reuses a token', async () => {
     const mine = await createVerifiedUser(email);
     const other = await createVerifiedUser(emailFor('henry'));
