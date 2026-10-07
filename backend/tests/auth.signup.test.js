@@ -136,4 +136,10 @@ describe('POST /auth/signup abuse limits and password edge cases', () => {
     expect(res.body.error.code).toBe('RATE_LIMITED');
     expect(sendMail).not.toHaveBeenCalled();
   });
+
+  it('rejects passwords over 72 bytes, which bcrypt would silently truncate', async () => {
+    const password = 'é'.repeat(40) + 'a1'; // 42 characters but 82 bytes
+    const res = await signup({ password }).expect(400);
+    expect(res.body.error.message).toMatch(/body\.password/);
+  });
 });

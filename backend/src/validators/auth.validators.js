@@ -8,7 +8,9 @@ const password = z
   .min(8, 'must be at least 8 characters')
   .max(72, 'must be at most 72 characters')
   .regex(/[A-Za-z]/, 'must contain a letter')
-  .regex(/\d/, 'must contain a number');
+  .regex(/\d/, 'must contain a number')
+  // bcrypt silently ignores everything after 72 bytes, and multi-byte characters use several.
+  .refine((v) => Buffer.byteLength(v, 'utf8') <= 72, 'must be at most 72 bytes');
 
 const signupEmail = email.refine((v) => v.endsWith(`@${env.ALLOWED_EMAIL_DOMAIN}`), {
   message: `must be a @${env.ALLOWED_EMAIL_DOMAIN} address`,

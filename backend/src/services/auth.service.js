@@ -25,7 +25,7 @@ const BCRYPT_ROUNDS = env.NODE_ENV === 'test' ? 4 : 12;
 function hashOtp(email, code) {
   return crypto
     .createHmac('sha256', env.JWT_ACCESS_SECRET)
-    .update(`${email}:${code}`)
+    .update(`otp:${email}:${code}`)
     .digest('hex');
 }
 
@@ -35,12 +35,9 @@ function safeEqualHex(a, b) {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
-let dummyHash;
-/** Compared against when the email is unknown, so login timing does not reveal which emails exist. */
-async function getDummyHash() {
-  dummyHash ??= await bcrypt.hash('not-a-real-password', BCRYPT_ROUNDS);
-  return dummyHash;
-}
+// Compared against when the email is unknown, so login timing does not reveal which emails exist.
+// Started at load so even the first unknown-email login costs the same as any other.
+const dummyHash = bcrypt.hash('not-a-real-password', BCRYPT_ROUNDS);
 
 /**
  * Every new code gets a fresh set of guesses, so issuing codes must be throttled or an attacker
@@ -193,7 +190,7 @@ async function resendOtp({ email }) {
 
 async function login({ email, password }) {
   const user = await prisma.user.findUnique({ where: { email } });
-  const ok = await bcrypt.compare(password, user ? user.passwordHash : await getDummyHash());
+  const ok = await bcrypt.compare(password, user ? user.passwordHash : await dummyHash);
   if (!user || !ok) {
     throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
   }
