@@ -23,6 +23,14 @@ function lastOtpCode(email) {
   return calls[calls.length - 1][0].text.match(/\b(\d{6})\b/)[1];
 }
 
+/** Makes existing codes look `ms` old, so the resend cooldown has passed. */
+function ageOtps(email, ms = 61 * 1000) {
+  return prisma.emailOtp.updateMany({
+    where: { email },
+    data: { createdAt: new Date(Date.now() - ms) },
+  });
+}
+
 function signup(overrides = {}) {
   return request(app)
     .post('/auth/signup')
@@ -47,6 +55,7 @@ module.exports = {
   resetDb,
   emailFor,
   lastOtpCode,
+  ageOtps,
   signup,
   createVerifiedUser,
 };

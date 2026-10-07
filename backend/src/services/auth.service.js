@@ -16,6 +16,7 @@ const {
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+const OTP_MAX_PER_HOUR = 5;
 const BCRYPT_ROUNDS = env.NODE_ENV === 'test' ? 4 : 12;
 
 // ---------- helpers ----------
@@ -39,6 +40,35 @@ let dummyHash;
 async function getDummyHash() {
   dummyHash ??= await bcrypt.hash('not-a-real-password', BCRYPT_ROUNDS);
   return dummyHash;
+}
+
+/**
+ * Every new code gets a fresh set of guesses, so issuing codes must be throttled or an attacker
+ * could keep requesting codes and guessing. Limits: 1 per 60 seconds and 5 per hour, per email.
+ */
+async function assertCanIssueOtp(email) {
+  const recent = await prisma.emailOtp.findMany({
+    where: { email, purpose: 'SIGNUP', createdAt: { gt: new Date(Date.now() - 60 * 60 * 1000) } },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
+  });
+  if (recent.length === 0) return;
+
+  const waitMs = recent[0].createdAt.getTime() + OTP_RESEND_COOLDOWN_MS - Date.now();
+  if (waitMs > 0) {
+    throw new AppError(
+      'RATE_LIMITED',
+      `Please wait ${Math.ceil(waitMs / 1000)} seconds before requesting another code`,
+      429,
+    );
+  }
+  if (recent.length >= OTP_MAX_PER_HOUR) {
+    throw new AppError(
+      'RATE_LIMITED',
+      'Too many verification codes requested. Try again in an hour',
+      429,
+    );
+  }
 }
 
 /** Invalidates earlier unused codes for the email, stores a new hashed one, and emails it. */
@@ -93,6 +123,7 @@ async function signup({ name, email, password }) {
   if (existing?.isVerified) {
     throw new AppError('EMAIL_TAKEN', 'An account with this email already exists', 409);
   }
+  await assertCanIssueOtp(email); // before touching the account, so a throttled retry changes nothing
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
   try {
@@ -153,20 +184,7 @@ async function verifyOtp({ email, code }) {
 }
 
 async function resendOtp({ email }) {
-  const latest = await prisma.emailOtp.findFirst({
-    where: { email, purpose: 'SIGNUP' },
-    orderBy: { createdAt: 'desc' },
-  });
-  if (latest) {
-    const waitMs = latest.createdAt.getTime() + OTP_RESEND_COOLDOWN_MS - Date.now();
-    if (waitMs > 0) {
-      throw new AppError(
-        'RATE_LIMITED',
-        `Please wait ${Math.ceil(waitMs / 1000)} seconds before requesting another code`,
-        429,
-      );
-    }
-  }
+  await assertCanIssueOtp(email);
 
   // Same response whether or not the email is registered, so this cannot be used to probe accounts.
   const user = await prisma.user.findUnique({ where: { email } });

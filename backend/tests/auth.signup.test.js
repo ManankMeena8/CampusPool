@@ -5,6 +5,7 @@ const {
   resetDb,
   emailFor,
   lastOtpCode,
+  ageOtps,
   signup,
   createVerifiedUser,
 } = require('./helpers/auth');
@@ -73,6 +74,7 @@ describe('POST /auth/signup', () => {
     const email = emailFor('dave');
     await signup({ email, name: 'Old Name', password: 'OldPassw0rd' }).expect(201);
     const firstHash = (await prisma.emailOtp.findFirstOrThrow({ where: { email } })).codeHash;
+    await ageOtps(email);
 
     await signup({ email, name: 'New Name', password: 'NewPassw0rd' }).expect(201);
 
@@ -104,5 +106,34 @@ describe('POST /auth/signup', () => {
     sendMail.mockRejectedValueOnce(new Error('smtp down'));
     const res = await signup().expect(503);
     expect(res.body).toEqual({ error: { code: 'EMAIL_SEND_FAILED', message: expect.any(String) } });
+  });
+});
+
+describe('POST /auth/signup abuse limits and password edge cases', () => {
+  it('throttles signup retries for the same email and changes nothing when throttled', async () => {
+    const email = emailFor('retry');
+    await signup({ email, name: 'First' }).expect(201);
+
+    const res = await signup({ email, name: 'Second' }).expect(429);
+    expect(res.body.error.code).toBe('RATE_LIMITED');
+    expect((await prisma.user.findUniqueOrThrow({ where: { email } })).name).toBe('First');
+    expect(sendMail).toHaveBeenCalledTimes(1);
+  });
+
+  it('caps verification codes at 5 per hour per email, even when spaced out', async () => {
+    const email = emailFor('flood');
+    const past = new Date(Date.now() - 10 * 60 * 1000);
+    await prisma.emailOtp.createMany({
+      data: Array.from({ length: 5 }, () => ({
+        email,
+        codeHash: 'x'.repeat(64),
+        expiresAt: past,
+        createdAt: past,
+      })),
+    });
+
+    const res = await signup({ email }).expect(429);
+    expect(res.body.error.code).toBe('RATE_LIMITED');
+    expect(sendMail).not.toHaveBeenCalled();
   });
 });
