@@ -1,0 +1,26 @@
+enum AppEnv { dev, prod }
+
+class AppConfig {
+  const AppConfig({required this.env, required this.apiBaseUrl});
+
+  final AppEnv env;
+  final String apiBaseUrl;
+
+  /// Android emulator reaches the host machine via 10.0.2.2.
+  static const _devDefault = 'http://10.0.2.2:3000';
+  static const _prodDefault = 'https://api.campuspool.example';
+
+  /// Override with `--dart-define=API_BASE_URL=http://<lan-ip>:3000`
+  /// (needed on a physical device) and `--dart-define=APP_ENV=prod`.
+  static const _envName = String.fromEnvironment('APP_ENV', defaultValue: 'dev');
+  static const _baseUrlOverride = String.fromEnvironment('API_BASE_URL');
+
+  factory AppConfig.fromEnvironment() {
+    final env = _envName == 'prod' ? AppEnv.prod : AppEnv.dev;
+    final fallback = env == AppEnv.prod ? _prodDefault : _devDefault;
+    return AppConfig(
+      env: env,
+      apiBaseUrl: _baseUrlOverride.isNotEmpty ? _baseUrlOverride : fallback,
+    );
+  }
+}
