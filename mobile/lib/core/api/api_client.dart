@@ -3,8 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/app_config.dart';
+import '../storage/token_store.dart';
+import 'auth_interceptor.dart';
 
-final appConfigProvider = Provider<AppConfig>((_) => AppConfig.fromEnvironment());
+final appConfigProvider = Provider<AppConfig>(
+  (_) => AppConfig.fromEnvironment(),
+);
 
 /// The single dio client for all API calls.
 final dioProvider = Provider<Dio>((ref) {
@@ -19,10 +23,15 @@ final dioProvider = Provider<Dio>((ref) {
     ),
   );
 
-  // TODO(auth): add the auth interceptor here once the auth feature exists.
+  dio.interceptors.add(
+    AuthInterceptor(dio: dio, tokens: ref.watch(tokenStoreProvider)),
+  );
 
   if (kDebugMode) {
-    dio.interceptors.add(LogInterceptor(requestBody: true, responseBody: true));
+    // Headers and bodies stay out of the log: they carry passwords, OTPs and tokens.
+    dio.interceptors.add(
+      LogInterceptor(requestHeader: false, responseHeader: false),
+    );
   }
   return dio;
 });
