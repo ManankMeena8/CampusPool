@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/api/api_error.dart';
+import '../../../core/router/routes.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/loading_view.dart';
 import '../providers/health_provider.dart';
@@ -14,7 +16,16 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final health = ref.watch(healthProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('CampusPool')),
+      appBar: AppBar(
+        title: const Text('CampusPool'),
+        actions: [
+          IconButton(
+            tooltip: 'Profile',
+            icon: const Icon(Icons.account_circle),
+            onPressed: () => context.push(Routes.profile),
+          ),
+        ],
+      ),
       body: health.when(
         loading: () => const LoadingView(message: 'Contacting backend...'),
         error: (e, _) => ErrorView(
