@@ -20,8 +20,14 @@ Real-time ride-pooling app for verified college students and staff.
 - Feature folders: lib/features/<feature>/{data,providers,ui}
 - All API calls go through a single dio client with auth interceptor
 - Every screen handles loading, error and empty states
+- Flutter targets Android only; the dev API URL is http://10.0.2.2:3000 and is overridden with --dart-define=API_BASE_URL
 
 ## Git
 - Small commits with clear messages
 - No Co-Authored-By or Claude attribution lines in commit messages
 - Never commit .env files
+
+## Decisions so far
+- Backend: Express 4, Prisma 6; controllers are wrapped in asyncHandler (no try/catch)
+- Tests use TEST_DATABASE_URL (a separate Neon branch), never the dev database
+- Auth: access token 15 min, refresh token 7 days with rotation on every refresh
