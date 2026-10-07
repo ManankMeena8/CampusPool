@@ -31,3 +31,10 @@ Real-time ride-pooling app for verified college students and staff.
 - Backend: Express 4, Prisma 6; controllers are wrapped in asyncHandler (no try/catch)
 - Tests use TEST_DATABASE_URL (a separate Neon branch), never the dev database
 - Auth: access token 15 min, refresh token 7 days with rotation on every refresh
+
+## Known gaps (decided, not forgotten)
+- Login rate limiting by IP + email: add in Phase 7.1 (trust proxy = 1 on Render, limiter disabled in tests)
+- Plus-addressing (a+1@, a+2@) can create duplicate accounts: accepted for the MVP
+- Access tokens stay valid up to 15 minutes after logout: accepted
+- Expired refresh tokens are never deleted: cleanup job planned for Part B
+- Signup 409 and resend 429 reveal account state: accepted by design
