@@ -11,6 +11,16 @@ const schema = z
     CORS_ORIGIN: z.string().min(1).default('*'),
     DATABASE_URL: z.string().min(1, 'is required'),
     TEST_DATABASE_URL: z.string().min(1).optional(),
+    JWT_ACCESS_SECRET: z.string().min(32, 'must be at least 32 characters'),
+    ALLOWED_EMAIL_DOMAIN: z
+      .string()
+      .min(1, 'is required')
+      .transform((v) => v.trim().toLowerCase().replace(/^@/, '')),
+    SMTP_HOST: z.string().min(1, 'is required'),
+    SMTP_PORT: z.coerce.number().int().positive().default(587),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+    MAIL_FROM: z.string().min(1).default('CampusPool <no-reply@campuspool.local>'),
   })
   .refine((v) => v.NODE_ENV !== 'test' || v.TEST_DATABASE_URL, {
     path: ['TEST_DATABASE_URL'],

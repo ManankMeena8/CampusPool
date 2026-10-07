@@ -6,3 +6,56 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum Role {
+  RIDER
+  DRIVER
+  BOTH
+}
+
+enum OtpPurpose {
+  SIGNUP
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  phone        String?
+  role         Role     @default(RIDER)
+  isVerified   Boolean  @default(false)
+  ratingAvg    Float    @default(0)
+  ratingCount  Int      @default(0)
+  fcmToken     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+}
+
+model EmailOtp {
+  id         String     @id @default(uuid())
+  email      String
+  codeHash   String
+  purpose    OtpPurpose @default(SIGNUP)
+  expiresAt  DateTime
+  attempts   Int        @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([email, createdAt])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
