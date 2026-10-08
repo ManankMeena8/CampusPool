@@ -31,6 +31,7 @@ Real-time ride-pooling app for verified college students and staff.
 - Backend: Express 4, Prisma 6; controllers are wrapped in asyncHandler (no try/catch)
 - Tests use TEST_DATABASE_URL (a separate Neon branch), never the dev database
 - Auth: access token 15 min, refresh token 7 days with rotation on every refresh
+- Rides: departure window, 200 m minimum trip and 1-hour overlap rule are enforced server-side; the full rule list is in the ride commit bodies
 
 ## Known gaps (decided, not forgotten)
 - Login rate limiting by IP + email: add in Phase 7.1 (trust proxy = 1 on Render, limiter disabled in tests)
@@ -39,3 +40,7 @@ Real-time ride-pooling app for verified college students and staff.
 - Expired refresh tokens are never deleted: cleanup job planned for Part B
 - Signup 409 and resend 429 reveal account state: accepted by design
 - A refresh that times out, or returns 200 with a body the client can't parse, after the server already rotated the token makes the retry look like reuse, which logs the user out everywhere. Accepted for the MVP; possible fix is a short server-side grace window.
+- OPEN rides past their departure time still show as OPEN in /rides/mine (nothing moves them to COMPLETED); the app must show them as expired
+- Cancelling a ride notifies no one yet: bookings do not exist
+- /rides/mine has no pagination
+- Routing uses the public OSRM demo server: rate-limited, no SLA, for light use only. Move to a self-hosted OSRM (set ROUTING_BASE_URL) before real traffic
