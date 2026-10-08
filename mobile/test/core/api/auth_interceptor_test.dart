@@ -220,6 +220,51 @@ void main() {
   );
 
   test(
+    'a 401 on the retry after a successful refresh ends the session',
+    () async {
+      serve(
+        refresh: refreshThen(() async => json(200, newTokens.toJson())),
+        other: (o) async =>
+            apiError(401, 'INVALID_TOKEN'), // e.g. account removed
+      );
+
+      final error = await dio
+          .get<dynamic>('/a')
+          .then<Object>((r) => r, onError: (Object e) => e);
+
+      expect((error as DioException).response?.statusCode, 401);
+      expect(await tokens.read(), isNull);
+      expect(sessionExpiredEvents, 1);
+    },
+  );
+
+  test(
+    'a 401 on a retry does not end a session that replaced it meanwhile',
+    () async {
+      serve(
+        refresh: refreshThen(() async => json(200, newTokens.toJson())),
+        other: (o) async {
+          if (o.extra['authRetried'] == true) {
+            // The user logs out and back in while the retry is on its way.
+            await tokens.clear();
+            await tokens.save(
+              const AuthTokens(
+                accessToken: 'b-access',
+                refreshToken: 'b-refresh',
+              ),
+            );
+          }
+          return apiError(401, 'INVALID_TOKEN');
+        },
+      );
+
+      await expectLater(dio.get<dynamic>('/a'), throwsA(isA<DioException>()));
+      expect((await tokens.read())!.refreshToken, 'b-refresh');
+      expect(sessionExpiredEvents, 0);
+    },
+  );
+
+  test(
     'requests marked skipAuth carry no token and never trigger a refresh',
     () async {
       String? sentAuth;

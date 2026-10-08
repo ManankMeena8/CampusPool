@@ -13,6 +13,7 @@ class _RefreshRejected implements Exception {
 }
 
 /// Attaches the access token and, on a 401, refreshes once and retries the request once.
+/// A 401 on that retry means the server rejects even fresh tokens, so the session ends.
 ///
 /// Refresh is single-flight: concurrent 401s await the same refresh call and share its result,
 /// so a refresh token is never sent twice (the server treats a second use as theft and revokes
@@ -24,7 +25,7 @@ class AuthInterceptor extends Interceptor {
 
   final Dio _dio;
   final TokenStore _tokens;
-  Future<String>? _inFlight;
+  Future<AuthTokens>? _inFlight;
 
   @override
   Future<void> onRequest(
@@ -55,14 +56,14 @@ class AuthInterceptor extends Interceptor {
     final current = await _tokens.read();
     if (current == null) return handler.next(err); // logged out meanwhile
 
-    final String accessToken;
+    final AuthTokens session;
     if (options.headers['Authorization'] != 'Bearer ${current.accessToken}') {
       // This request went out with an older token that has since been refreshed by another
       // request: just retry with the current one, no new refresh.
-      accessToken = current.accessToken;
+      session = current;
     } else {
       try {
-        accessToken = await (_inFlight ??= _tokens
+        session = await (_inFlight ??= _tokens
             .trackRefresh(_refresh(current.refreshToken))
             .whenComplete(() => _inFlight = null));
       } on _RefreshRejected {
@@ -82,19 +83,25 @@ class AuthInterceptor extends Interceptor {
     try {
       final retried = await _dio.fetch<dynamic>(
         options.copyWith(
-          headers: {...options.headers, 'Authorization': 'Bearer $accessToken'},
+          headers: {
+            ...options.headers,
+            'Authorization': 'Bearer ${session.accessToken}',
+          },
           extra: {...options.extra, _kRetried: true},
         ),
       );
       handler.resolve(retried);
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        await _endSession(session.refreshToken);
+      }
       handler.next(e);
     }
   }
 
   /// Exchanges the refresh token. Only an explicit 401 from the server ends the session;
   /// network errors and timeouts keep the tokens so the user can retry.
-  Future<String> _refresh(String refreshToken) async {
+  Future<AuthTokens> _refresh(String refreshToken) async {
     final Response<dynamic> response;
     try {
       response = await _dio.post<dynamic>(
@@ -104,10 +111,7 @@ class AuthInterceptor extends Interceptor {
       );
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) {
-        // A login during this refresh started a new session: leave that one alone.
-        if (await _tokens.clearIfCurrent(refreshToken)) {
-          _tokens.notifySessionExpired();
-        }
+        await _endSession(refreshToken);
         throw const _RefreshRejected();
       }
       rethrow;
@@ -117,6 +121,14 @@ class AuthInterceptor extends Interceptor {
     if (!await _tokens.replaceIfCurrent(refreshToken, next)) {
       throw const _RefreshRejected(); // logged out while refreshing: do not revive the session
     }
-    return next.accessToken;
+    return next;
+  }
+
+  /// Signs out the session that owns [refreshToken]. If a login replaced it meanwhile, that
+  /// newer session is left alone.
+  Future<void> _endSession(String refreshToken) async {
+    if (await _tokens.clearIfCurrent(refreshToken)) {
+      _tokens.notifySessionExpired();
+    }
   }
 }
