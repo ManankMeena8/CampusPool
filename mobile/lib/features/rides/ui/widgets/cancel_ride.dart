@@ -6,9 +6,28 @@ import '../../data/ride_models.dart';
 import '../../data/ride_repository.dart';
 import '../ride_format.dart';
 
-/// Asks for confirmation, then cancels [ride]. Returns the cancelled ride, or null when the user
-/// backed out or the request failed (the error is shown in a SnackBar).
-Future<Ride?> confirmAndCancelRide(
+/// The result of [confirmAndCancelRide].
+sealed class CancelOutcome {
+  const CancelOutcome();
+}
+
+/// The user backed out; nothing was sent.
+class CancelDismissed extends CancelOutcome {
+  const CancelDismissed();
+}
+
+class CancelSucceeded extends CancelOutcome {
+  const CancelSucceeded(this.ride);
+  final Ride ride;
+}
+
+/// The request failed (shown in a SnackBar). The ride may have changed on the server (409).
+class CancelFailed extends CancelOutcome {
+  const CancelFailed();
+}
+
+/// Asks for confirmation, then cancels [ride].
+Future<CancelOutcome> confirmAndCancelRide(
   BuildContext context,
   WidgetRef ref,
   Ride ride,
@@ -38,7 +57,7 @@ Future<Ride?> confirmAndCancelRide(
       ],
     ),
   );
-  if (confirmed != true || !context.mounted) return null;
+  if (confirmed != true || !context.mounted) return const CancelDismissed();
 
   final messenger = ScaffoldMessenger.of(context);
   try {
@@ -46,11 +65,11 @@ Future<Ride?> confirmAndCancelRide(
         .read(rideRepositoryProvider)
         .cancelRide(ride.id);
     messenger.showSnackBar(const SnackBar(content: Text('Ride cancelled.')));
-    return cancelled;
+    return CancelSucceeded(cancelled);
   } on ApiError catch (e) {
     messenger.showSnackBar(
       SnackBar(content: Text("Couldn't cancel the ride. ${e.message}")),
     );
-    return null;
+    return const CancelFailed();
   }
 }

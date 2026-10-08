@@ -10,6 +10,7 @@ class Routes {
   static const profile = '/profile';
   static const pickLocation = '/pick-location';
   static const postRide = '/rides/new';
+  static const myRides = '/rides/mine';
 
   /// Must be registered after the fixed /rides/... paths.
   static const rideDetail = '/rides/:id';

@@ -15,6 +15,7 @@ import '../../places/ui/location_picker_screen.dart';
 import '../data/ride_form_validation.dart';
 import '../data/ride_models.dart';
 import '../data/ride_repository.dart';
+import '../providers/ride_providers.dart';
 import 'ride_detail_screen.dart';
 import 'ride_format.dart';
 
@@ -154,6 +155,7 @@ class _PostRideScreenState extends ConsumerState<PostRideScreen> {
             ),
           );
       if (!mounted) return;
+      ref.invalidate(myRidesProvider);
       context.pushReplacement(
         Routes.rideDetailFor(created.ride.id),
         extra: RideDetailArgs(ride: created.ride, warnings: created.warnings),

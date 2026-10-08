@@ -53,12 +53,18 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
 
   Future<void> _cancel(Ride ride) async {
     setState(() => _cancelling = true);
-    final cancelled = await confirmAndCancelRide(context, ref, ride);
+    final outcome = await confirmAndCancelRide(context, ref, ride);
     if (!mounted) return;
-    setState(() {
-      _cancelling = false;
-      if (cancelled != null) _ride = cancelled;
-    });
+    setState(() => _cancelling = false);
+    switch (outcome) {
+      case CancelSucceeded(:final ride):
+        setState(() => _ride = ride);
+      case CancelFailed():
+        // A 409 means the ride changed on the server: show its current state.
+        await _refresh();
+      case CancelDismissed():
+        break;
+    }
   }
 
   @override
