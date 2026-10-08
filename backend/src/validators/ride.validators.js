@@ -54,4 +54,6 @@ const createRideBody = z
     }
   });
 
-module.exports = { createRideBody, MIN_LEAD_MS, MAX_LEAD_MS, MIN_TRIP_METERS };
+const rideIdParams = z.strictObject({ id: z.uuid() });
+
+module.exports = { createRideBody, rideIdParams, MIN_LEAD_MS, MAX_LEAD_MS, MIN_TRIP_METERS };

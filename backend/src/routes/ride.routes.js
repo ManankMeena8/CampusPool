@@ -14,5 +14,13 @@ router.post(
   validate({ body: v.createRideBody }),
   asyncHandler(controller.createRide),
 );
+// /mine must stay above /:id.
+router.get('/mine', requireAuth, validate({}), asyncHandler(controller.listMyRides));
+router.get(
+  '/:id',
+  requireAuth,
+  validate({ params: v.rideIdParams }),
+  asyncHandler(controller.getRide),
+);
 
 module.exports = router;

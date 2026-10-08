@@ -18,15 +18,15 @@ function toPublicUser(user) {
 
 /**
  * Shapes a row from ride.service (geo columns as GeoJSON) for the API: points become {lat, lng}
- * and the route an array of {lat, lng}. The driver is exposed by name and rating only.
+ * and the route an array of {lat, lng} (or null). List rows have no routeLine, so no `route` key.
+ * The driver is exposed by name and rating only.
  */
 function toRide(row) {
-  return {
+  const ride = {
     id: row.id,
     status: row.status,
     start: { ...fromGeoJsonPoint(row.startPoint), address: row.startAddress },
     end: { ...fromGeoJsonPoint(row.endPoint), address: row.endAddress },
-    route: fromGeoJsonLine(row.routeLine),
     distanceMeters: row.distanceMeters,
     durationSeconds: row.durationSeconds,
     departureTime: row.departureTime,
@@ -43,6 +43,8 @@ function toRide(row) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+  if ('routeLine' in row) ride.route = fromGeoJsonLine(row.routeLine);
+  return ride;
 }
 
 module.exports = { toPublicUser, toRide };

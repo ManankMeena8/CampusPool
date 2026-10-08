@@ -1,4 +1,5 @@
 const { randomUUID } = require('crypto');
+const { Prisma } = require('@prisma/client');
 const prisma = require('../lib/prisma');
 const AppError = require('../lib/AppError');
 const routing = require('./routing.service');
@@ -39,26 +40,52 @@ function snapWarnings(route) {
   return warnings;
 }
 
-/**
- * Selects one ride with geo columns as GeoJSON and the driver's public fields.
- * Timestamps are written and compared as UTC explicitly, whatever the session time zone.
- */
+// Geo columns come back as GeoJSON; the driver only by public fields (no email or phone).
+const RIDE_COLUMNS = Prisma.sql`
+  r."id", r."driverId", r."status"::text AS "status",
+  r."startAddress", r."endAddress",
+  ST_AsGeoJSON(r."startPoint")::json AS "startPoint",
+  ST_AsGeoJSON(r."endPoint")::json AS "endPoint",
+  r."distanceMeters", r."durationSeconds", r."departureTime",
+  r."seatsTotal", r."seatsAvailable", r."pricePerSeat", r."notes",
+  r."createdAt", r."updatedAt",
+  u."name" AS "driverName", u."ratingAvg" AS "driverRatingAvg",
+  u."ratingCount" AS "driverRatingCount"`;
+
+// Timestamps are stored as UTC without a zone; convert explicitly, whatever the session time zone.
+const utc = (date) => Prisma.sql`(${date.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
+
+/** One ride with its route line, or null. */
 async function findRideById(id) {
   const rows = await prisma.$queryRaw`
-    SELECT r."id", r."driverId", r."status"::text AS "status",
-           r."startAddress", r."endAddress",
-           ST_AsGeoJSON(r."startPoint")::json AS "startPoint",
-           ST_AsGeoJSON(r."endPoint")::json AS "endPoint",
-           ST_AsGeoJSON(r."routeLine")::json AS "routeLine",
-           r."distanceMeters", r."durationSeconds", r."departureTime",
-           r."seatsTotal", r."seatsAvailable", r."pricePerSeat", r."notes",
-           r."createdAt", r."updatedAt",
-           u."name" AS "driverName", u."ratingAvg" AS "driverRatingAvg",
-           u."ratingCount" AS "driverRatingCount"
+    SELECT ${RIDE_COLUMNS}, ST_AsGeoJSON(r."routeLine")::json AS "routeLine"
     FROM "Ride" r
     JOIN "User" u ON u."id" = r."driverId"
     WHERE r."id" = ${id}`;
   return rows[0] ?? null;
+}
+
+/**
+ * All of a driver's rides, without route lines: rides departing now or later first (soonest
+ * first), then past ones (most recent first). Status is not considered, so an OPEN ride whose
+ * departure has passed sorts with the past ones but is still OPEN.
+ */
+function findRidesByDriver(driverId) {
+  const now = utc(new Date(Date.now()));
+  return prisma.$queryRaw`
+    SELECT ${RIDE_COLUMNS}
+    FROM "Ride" r
+    JOIN "User" u ON u."id" = r."driverId"
+    WHERE r."driverId" = ${driverId}
+    ORDER BY (r."departureTime" >= ${now}) DESC,
+             CASE WHEN r."departureTime" >= ${now} THEN r."departureTime" END ASC,
+             r."departureTime" DESC`;
+}
+
+async function getRide(id) {
+  const ride = await findRideById(id);
+  if (!ride) throw new AppError('RIDE_NOT_FOUND', 'Ride not found', 404);
+  return ride;
 }
 
 async function createRide(driverId, input) {
@@ -88,7 +115,7 @@ async function createRide(driverId, input) {
           ST_SetSRID(ST_MakePoint(${end.lng}::float8, ${end.lat}::float8), 4326)::geography,
           ST_SetSRID(ST_GeomFromGeoJSON(${routeGeoJson}::text), 4326)::geography,
           ${route?.distanceMeters ?? null}::int, ${route?.durationSeconds ?? null}::int,
-          (${departureTime.toISOString()}::timestamptz AT TIME ZONE 'UTC'),
+          ${utc(departureTime)},
           ${seats}, ${seats}, ${pricePerSeat}, ${notes},
           (now() AT TIME ZONE 'UTC'), (now() AT TIME ZONE 'UTC')
         )`;
@@ -99,4 +126,10 @@ async function createRide(driverId, input) {
   return { ride: await findRideById(id), warnings: snapWarnings(route) };
 }
 
-module.exports = { createRide, findRideById, OVERLAP_WINDOW_MS, SNAP_WARNING_METERS };
+module.exports = {
+  createRide,
+  getRide,
+  findRidesByDriver,
+  OVERLAP_WINDOW_MS,
+  SNAP_WARNING_METERS,
+};
