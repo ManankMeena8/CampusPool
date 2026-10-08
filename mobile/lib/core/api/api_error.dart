@@ -22,6 +22,7 @@ class ApiError implements Exception {
   static const network = 'NETWORK_ERROR';
   static const timeout = 'TIMEOUT';
   static const sessionRefreshFailed = 'SESSION_REFRESH_FAILED';
+  static const badResponse = 'BAD_RESPONSE';
 
   /// Transient failures where trying again may succeed.
   bool get isRetryable =>
@@ -29,6 +30,21 @@ class ApiError implements Exception {
 
   /// The server rejected our credentials (the session is over).
   bool get isUnauthorized => status == 401;
+
+  /// For VALIDATION_ERROR: the first message for each top-level field, e.g.
+  /// {"departureTime": "must be at least 15 minutes from now", "end": "..."}. Nested paths
+  /// (start.lat) are keyed by their first segment (start).
+  Map<String, String> get fieldErrors {
+    if (code != 'VALIDATION_ERROR') return const {};
+    final errors = <String, String>{};
+    for (final line in message.split('\n')) {
+      final sep = line.indexOf(': ');
+      if (sep <= 0) continue;
+      final field = line.substring(0, sep).split('.').first;
+      errors.putIfAbsent(field, () => line.substring(sep + 2));
+    }
+    return errors;
+  }
 
   /// For RATE_LIMITED: seconds to wait, parsed from "Please wait N seconds ...".
   int? get retryAfterSeconds {
@@ -111,6 +127,15 @@ class ApiError implements Exception {
       case 'REFRESH_TOKEN_EXPIRED':
       case 'REFRESH_TOKEN_REUSED':
         return 'Your session has ended. Please log in again.';
+      case 'RIDE_OVERLAP':
+        return 'You already have a ride within 1 hour of this time. '
+            'Rides must be at least 1 hour apart.';
+      case 'RIDE_NOT_CANCELLABLE':
+        return 'This ride can no longer be cancelled.';
+      case 'RIDE_NOT_FOUND':
+        return 'This ride no longer exists.';
+      case 'FORBIDDEN':
+        return "You don't have permission to do this.";
       case 'VALIDATION_ERROR':
         // "body.email: must be ...; body.password: ..." -> "email: must be ...\npassword: ..."
         return serverMessage
