@@ -38,4 +38,4 @@ Real-time ride-pooling app for verified college students and staff.
 - Access tokens stay valid up to 15 minutes after logout: accepted
 - Expired refresh tokens are never deleted: cleanup job planned for Part B
 - Signup 409 and resend 429 reveal account state: accepted by design
-- A refresh that times out after the server already rotated the token makes the retry look like reuse, which logs the user out everywhere. Accepted for the MVP; possible fix is a short server-side grace window.
+- A refresh that times out, or returns 200 with a body the client can't parse, after the server already rotated the token makes the retry look like reuse, which logs the user out everywhere. Accepted for the MVP; possible fix is a short server-side grace window.
