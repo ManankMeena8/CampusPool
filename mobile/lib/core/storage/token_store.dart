@@ -73,7 +73,8 @@ class TokenStore {
         _tokens = await _storage.read();
       } catch (e) {
         // Unreadable storage (e.g. keys lost after a restore): treat as logged out.
-        debugPrint('Token storage unreadable, clearing: $e');
+        // Only the type: a FormatException's message quotes the stored JSON, i.e. the tokens.
+        debugPrint('Token storage unreadable, clearing: ${e.runtimeType}');
         await _safeDelete();
         _tokens = null;
       }
