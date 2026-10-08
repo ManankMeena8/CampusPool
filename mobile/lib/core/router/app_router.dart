@@ -10,6 +10,7 @@ import '../../features/auth/ui/splash_screen.dart';
 import '../../features/health/ui/home_screen.dart';
 import '../../features/places/ui/location_picker_screen.dart';
 import '../../features/profile/ui/profile_screen.dart';
+import '../../features/rides/ui/ride_detail_screen.dart';
 import 'routes.dart';
 
 /// Where a user in [auth] state may be at [location]; null means "stay".
@@ -59,6 +60,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           args:
               state.extra as PickLocationArgs? ??
               const PickLocationArgs(title: 'Choose a location'),
+        ),
+      ),
+      GoRoute(
+        path: Routes.rideDetail,
+        builder: (_, state) => RideDetailScreen(
+          id: state.pathParameters['id']!,
+          args: state.extra as RideDetailArgs? ?? const RideDetailArgs(),
         ),
       ),
     ],

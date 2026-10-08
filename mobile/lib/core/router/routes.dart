@@ -9,6 +9,9 @@ class Routes {
   static const home = '/';
   static const profile = '/profile';
   static const pickLocation = '/pick-location';
+  static const rideDetail = '/rides/:id';
+
+  static String rideDetailFor(String id) => '/rides/${Uri.encodeComponent(id)}';
 
   /// Screens reachable without a session.
   static const public = {login, signup, verifyOtp};
