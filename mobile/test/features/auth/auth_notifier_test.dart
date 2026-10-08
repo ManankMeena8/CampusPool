@@ -108,6 +108,19 @@ void main() {
       expect(state(), isA<AuthUnauthenticated>());
       expect(storage.tokens, isNull);
     });
+
+    test(
+      'an unexpected error shows Retry instead of spinning forever',
+      () async {
+        storage.tokens = tokens;
+        when(() => repo.currentUser()).thenThrow(TypeError());
+
+        await notifier().bootstrap();
+
+        expect(state(), isA<AuthBootstrapError>());
+        expect(storage.tokens, isNotNull);
+      },
+    );
   });
 
   group('login', () {

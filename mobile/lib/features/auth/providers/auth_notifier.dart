@@ -61,6 +61,10 @@ class AuthNotifier extends Notifier<AuthState> {
       } else {
         state = AuthBootstrapError(e);
       }
+    } catch (e) {
+      // Anything else (e.g. an unexpected response shape) would leave the splash spinning
+      // forever; show Retry / Log out instead.
+      state = AuthBootstrapError(ApiError.from(e));
     }
   }
 
