@@ -4,7 +4,7 @@ Real-time ride-pooling app for verified college students and staff.
 ## Stack
 - Backend: Node.js 20, Express, PostgreSQL + PostGIS (Neon), Prisma, zod, JWT, bcrypt, Socket.io, Nodemailer
 - Mobile: Flutter, Riverpod, dio, go_router, flutter_map + OpenStreetMap, geolocator, flutter_secure_storage, FCM
-- Routing: OpenRouteService
+- Routing: OSRM public demo server (no key); isolated in routing.service.js
 - Only free services. No Google Maps, no Redis yet.
 
 ## Backend conventions

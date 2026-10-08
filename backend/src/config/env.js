@@ -21,6 +21,10 @@ const schema = z
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
     MAIL_FROM: z.string().min(1).default('CampusPool <no-reply@campuspool.local>'),
+    ROUTING_BASE_URL: z
+      .url()
+      .default('https://router.project-osrm.org')
+      .transform((v) => v.replace(/\/+$/, '')),
   })
   .refine((v) => v.NODE_ENV !== 'test' || v.TEST_DATABASE_URL, {
     path: ['TEST_DATABASE_URL'],
