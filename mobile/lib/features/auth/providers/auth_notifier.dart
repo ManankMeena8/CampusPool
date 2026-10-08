@@ -88,10 +88,10 @@ class AuthNotifier extends Notifier<AuthState> {
     await _startSession(await _repo.login(email: email, password: password));
   }
 
-  /// Signs out locally right away; telling the server is best effort.
+  /// Signs out locally, then tells the server (best effort). An in-flight refresh is awaited
+  /// first: it rotates the refresh token, and revoking the old one would leave the new one live.
   Future<void> logout() async {
-    final tokens = await _tokens.read();
-    await _tokens.clear();
+    final tokens = await _tokens.clearAfterRefresh();
     state = const AuthUnauthenticated();
     if (tokens != null) {
       try {

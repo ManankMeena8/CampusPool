@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:campuspool/core/api/api_error.dart';
 import 'package:campuspool/core/storage/token_store.dart';
 import 'package:campuspool/features/auth/data/auth_models.dart';
@@ -241,6 +243,39 @@ void main() {
       expect(storage.tokens, isNull);
       verify(() => repo.logout(refreshToken: 'refresh')).called(1);
     });
+
+    test(
+      'waits for an in-flight refresh and revokes the rotated token',
+      () async {
+        when(
+          () => repo.logout(refreshToken: any(named: 'refreshToken')),
+        ).thenAnswer((_) async {});
+        const rotated = AuthTokens(
+          accessToken: 'rotated-access',
+          refreshToken: 'rotated-refresh',
+        );
+        final serverAnswered = Completer<void>();
+        // What the interceptor does: store the rotated tokens once the server answers.
+        tokenStore.trackRefresh(
+          serverAnswered.future.then(
+            (_) => tokenStore.replaceIfCurrent('refresh', rotated),
+          ),
+        );
+
+        final loggingOut = notifier().logout();
+        await Future<void>.delayed(Duration.zero);
+        verifyNever(
+          () => repo.logout(refreshToken: any(named: 'refreshToken')),
+        );
+
+        serverAnswered.complete();
+        await loggingOut;
+
+        verify(() => repo.logout(refreshToken: 'rotated-refresh')).called(1);
+        expect(storage.tokens, isNull);
+        expect(state(), isA<AuthUnauthenticated>());
+      },
+    );
 
     test('still signs out locally when the server cannot be reached', () async {
       when(

@@ -63,6 +63,7 @@ class TokenStore {
 
   AuthTokens? _tokens;
   Future<void>? _initialLoad;
+  Future<void>? _refreshing;
 
   /// Fires when the server rejected the refresh token and the tokens were cleared.
   Stream<void> get sessionExpired => _sessionExpired.stream;
@@ -118,6 +119,28 @@ class TokenStore {
   Future<void> clear() async {
     await _loaded();
     await _clear();
+  }
+
+  /// The interceptor registers each refresh call here, so logout can wait until the rotated
+  /// tokens are stored before deciding which refresh token to revoke.
+  Future<T> trackRefresh<T>(Future<T> refresh) {
+    final settled = refresh.then<void>((_) {}, onError: (Object _) {});
+    _refreshing = settled;
+    settled.whenComplete(() {
+      if (identical(_refreshing, settled)) _refreshing = null;
+    });
+    return refresh;
+  }
+
+  /// Waits for any in-flight refresh, then clears the tokens and returns the ones cleared.
+  Future<AuthTokens?> clearAfterRefresh() async {
+    await _loaded();
+    while (_refreshing != null) {
+      await _refreshing;
+    }
+    final tokens = _tokens;
+    await _clear();
+    return tokens;
   }
 
   /// Updates memory synchronously, then persists.

@@ -62,9 +62,9 @@ class AuthInterceptor extends Interceptor {
       accessToken = current.accessToken;
     } else {
       try {
-        accessToken = await (_inFlight ??= _refresh(
-          current.refreshToken,
-        ).whenComplete(() => _inFlight = null));
+        accessToken = await (_inFlight ??= _tokens
+            .trackRefresh(_refresh(current.refreshToken))
+            .whenComplete(() => _inFlight = null));
       } on _RefreshRejected {
         return handler.next(err); // session is over; the original 401 stands
       } catch (e) {
