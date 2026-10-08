@@ -32,6 +32,7 @@ model User {
   updatedAt    DateTime @updatedAt
 
   refreshTokens RefreshToken[]
+  rides         Ride[]
 }
 
 model EmailOtp {
@@ -58,4 +59,40 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+enum RideStatus {
+  OPEN
+  FULL
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Ride {
+  id              String                                      @id @default(uuid())
+  driverId        String
+  startAddress    String
+  endAddress      String
+  startPoint      Unsupported("geography(Point, 4326)")
+  endPoint        Unsupported("geography(Point, 4326)")
+  routeLine       Unsupported("geography(LineString, 4326)")?
+  distanceMeters  Int?
+  durationSeconds Int?
+  departureTime   DateTime
+  seatsTotal      Int
+  seatsAvailable  Int
+  pricePerSeat    Int                                         @default(0)
+  notes           String?
+  status          RideStatus                                  @default(OPEN)
+  createdAt       DateTime                                    @default(now())
+  updatedAt       DateTime                                    @updatedAt
+
+  driver User @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId, departureTime])
+  @@index([status, departureTime])
+  @@index([startPoint], type: Gist)
+  @@index([endPoint], type: Gist)
+  @@index([routeLine], type: Gist)
 }
