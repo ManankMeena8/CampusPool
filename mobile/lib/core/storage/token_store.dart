@@ -62,36 +62,35 @@ class TokenStore {
   final _sessionExpired = StreamController<void>.broadcast();
 
   AuthTokens? _tokens;
-  bool _loaded = false;
+  Future<void>? _initialLoad;
 
   /// Fires when the server rejected the refresh token and the tokens were cleared.
   Stream<void> get sessionExpired => _sessionExpired.stream;
 
-  Future<AuthTokens?> read() async {
-    if (!_loaded) {
-      try {
-        _tokens = await _storage.read();
-      } catch (e) {
-        // Unreadable storage (e.g. keys lost after a restore): treat as logged out.
-        // Only the type: a FormatException's message quotes the stored JSON, i.e. the tokens.
-        debugPrint('Token storage unreadable, clearing: ${e.runtimeType}');
-        await _safeDelete();
-        _tokens = null;
-      }
-      _loaded = true;
+  /// Every operation awaits this first, so a slow initial read can never overwrite a newer
+  /// save or clear. After it, each check-and-update below runs without an await in between.
+  Future<void> _loaded() => _initialLoad ??= _load();
+
+  Future<void> _load() async {
+    try {
+      _tokens = await _storage.read();
+    } catch (e) {
+      // Unreadable storage (e.g. keys lost after a restore): treat as logged out.
+      // Only the type: a FormatException's message quotes the stored JSON, i.e. the tokens.
+      debugPrint('Token storage unreadable, clearing: ${e.runtimeType}');
+      await _safeDelete();
+      _tokens = null;
     }
+  }
+
+  Future<AuthTokens?> read() async {
+    await _loaded();
     return _tokens;
   }
 
   Future<void> save(AuthTokens tokens) async {
-    _tokens = tokens;
-    _loaded = true;
-    try {
-      await _storage.write(tokens);
-    } catch (e) {
-      // The session still works in memory; it just will not survive a restart.
-      debugPrint('Failed to persist tokens: $e');
-    }
+    await _loaded();
+    await _write(tokens);
   }
 
   /// Saves rotated tokens only if [usedRefreshToken] is still the current one. Returns false
@@ -101,22 +100,39 @@ class TokenStore {
     String usedRefreshToken,
     AuthTokens next,
   ) async {
+    await _loaded();
     if (_tokens?.refreshToken != usedRefreshToken) return false;
-    await save(next);
+    await _write(next);
     return true;
   }
 
   /// Clears the tokens only if [rejectedRefreshToken] is still the current one. Returns false
   /// when a newer session (e.g. a fresh login) replaced it, which must not be signed out.
   Future<bool> clearIfCurrent(String rejectedRefreshToken) async {
+    await _loaded();
     if (_tokens?.refreshToken != rejectedRefreshToken) return false;
-    await clear();
+    await _clear();
     return true;
   }
 
   Future<void> clear() async {
+    await _loaded();
+    await _clear();
+  }
+
+  /// Updates memory synchronously, then persists.
+  Future<void> _write(AuthTokens tokens) async {
+    _tokens = tokens;
+    try {
+      await _storage.write(tokens);
+    } catch (e) {
+      // The session still works in memory; it just will not survive a restart.
+      debugPrint('Failed to persist tokens: $e');
+    }
+  }
+
+  Future<void> _clear() async {
     _tokens = null;
-    _loaded = true;
     await _safeDelete();
   }
 
