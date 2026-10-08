@@ -8,6 +8,7 @@ import '../../features/auth/ui/otp_screen.dart';
 import '../../features/auth/ui/signup_screen.dart';
 import '../../features/auth/ui/splash_screen.dart';
 import '../../features/health/ui/home_screen.dart';
+import '../../features/places/ui/location_picker_screen.dart';
 import '../../features/profile/ui/profile_screen.dart';
 import 'routes.dart';
 
@@ -52,6 +53,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: Routes.home, builder: (_, _) => const HomeScreen()),
       GoRoute(path: Routes.profile, builder: (_, _) => const ProfileScreen()),
+      GoRoute(
+        path: Routes.pickLocation,
+        builder: (_, state) => LocationPickerScreen(
+          args:
+              state.extra as PickLocationArgs? ??
+              const PickLocationArgs(title: 'Choose a location'),
+        ),
+      ),
     ],
   );
   ref.onDispose(() {

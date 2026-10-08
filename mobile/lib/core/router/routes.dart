@@ -8,6 +8,7 @@ class Routes {
   static const verifyOtp = '/verify-otp';
   static const home = '/';
   static const profile = '/profile';
+  static const pickLocation = '/pick-location';
 
   /// Screens reachable without a session.
   static const public = {login, signup, verifyOtp};
