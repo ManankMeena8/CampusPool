@@ -266,4 +266,29 @@ void main() {
       expect(await tokens.read(), isNull);
     },
   );
+
+  test(
+    'a rejected refresh does not sign out a session started during it',
+    () async {
+      final refreshStarted = Completer<void>();
+      serve(
+        refresh: (o) async {
+          refreshStarted.complete();
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          return apiError(401, 'REFRESH_TOKEN_EXPIRED');
+        },
+      );
+
+      final request = dio
+          .get<dynamic>('/a')
+          .then<Object>((r) => r, onError: (Object e) => e);
+      await refreshStarted.future;
+      await tokens.clear(); // user logs out...
+      await tokens.save(newTokens); // ...and logs back in
+
+      expect(await request, isA<DioException>());
+      expect((await tokens.read())!.refreshToken, 'new-refresh');
+      expect(sessionExpiredEvents, 0);
+    },
+  );
 }

@@ -104,8 +104,10 @@ class AuthInterceptor extends Interceptor {
       );
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) {
-        await _tokens.clear();
-        _tokens.notifySessionExpired();
+        // A login during this refresh started a new session: leave that one alone.
+        if (await _tokens.clearIfCurrent(refreshToken)) {
+          _tokens.notifySessionExpired();
+        }
         throw const _RefreshRejected();
       }
       rethrow;

@@ -106,6 +106,14 @@ class TokenStore {
     return true;
   }
 
+  /// Clears the tokens only if [rejectedRefreshToken] is still the current one. Returns false
+  /// when a newer session (e.g. a fresh login) replaced it, which must not be signed out.
+  Future<bool> clearIfCurrent(String rejectedRefreshToken) async {
+    if (_tokens?.refreshToken != rejectedRefreshToken) return false;
+    await clear();
+    return true;
+  }
+
   Future<void> clear() async {
     _tokens = null;
     _loaded = true;
