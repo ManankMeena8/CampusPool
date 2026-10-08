@@ -16,4 +16,9 @@ async function getRide(req, res) {
   res.json({ ride: toRide(ride) });
 }
 
-module.exports = { createRide, listMyRides, getRide };
+async function cancelRide(req, res) {
+  const ride = await rideService.cancelRide(req.user.id, req.params.id);
+  res.json({ ride: toRide(ride) });
+}
+
+module.exports = { createRide, listMyRides, getRide, cancelRide };

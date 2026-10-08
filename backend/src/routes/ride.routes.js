@@ -22,5 +22,12 @@ router.get(
   validate({ params: v.rideIdParams }),
   asyncHandler(controller.getRide),
 );
+// No role check: a driver who later switched to RIDER can still cancel their own rides.
+router.post(
+  '/:id/cancel',
+  requireAuth,
+  validate({ params: v.rideIdParams }),
+  asyncHandler(controller.cancelRide),
+);
 
 module.exports = router;

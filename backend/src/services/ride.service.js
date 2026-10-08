@@ -8,6 +8,7 @@ const HOUR_MS = 60 * 60 * 1000;
 const OVERLAP_WINDOW_MS = HOUR_MS;
 const SNAP_WARNING_METERS = 300;
 const ACTIVE_STATUSES = ['OPEN', 'FULL', 'IN_PROGRESS'];
+const CANCELLABLE_STATUSES = ['OPEN', 'FULL'];
 
 /** Rejects if the driver has an active ride departing less than an hour before or after `departureTime`. */
 async function assertNoOverlap(db, driverId, departureTime) {
@@ -126,7 +127,36 @@ async function createRide(driverId, input) {
   return { ride: await findRideById(id), warnings: snapWarnings(route) };
 }
 
+/**
+ * Cancels the ride if `driverId` drives it and it is OPEN or FULL. The check and the update are
+ * one conditional UPDATE, so a concurrent status change cannot slip in between; the ride is only
+ * re-read to pick the right error.
+ */
+async function cancelRide(driverId, id) {
+  const { count } = await prisma.ride.updateMany({
+    where: { id, driverId, status: { in: CANCELLABLE_STATUSES } },
+    data: { status: 'CANCELLED' },
+  });
+  if (count === 0) {
+    const ride = await prisma.ride.findUnique({
+      where: { id },
+      select: { driverId: true, status: true },
+    });
+    if (!ride) throw new AppError('RIDE_NOT_FOUND', 'Ride not found', 404);
+    if (ride.driverId !== driverId) {
+      throw new AppError('FORBIDDEN', 'Only the driver can cancel this ride', 403);
+    }
+    throw new AppError(
+      'RIDE_NOT_CANCELLABLE',
+      `A ${ride.status} ride cannot be cancelled; only OPEN or FULL rides can`,
+      409,
+    );
+  }
+  return findRideById(id);
+}
+
 module.exports = {
+  cancelRide,
   createRide,
   getRide,
   findRidesByDriver,
