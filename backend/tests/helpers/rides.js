@@ -1,3 +1,4 @@
+const { randomUUID } = require('crypto');
 const request = require('supertest');
 const { signAccessToken } = require('../../src/lib/tokens');
 const { app, prisma, emailFor } = require('./auth');
@@ -64,7 +65,45 @@ function postRide(token, body = rideBody()) {
   return request(app).post('/rides').set(bearer(token)).send(body);
 }
 
+// Length of one degree of latitude near START (~13°N) on the WGS84 ellipsoid PostGIS measures on.
+const METERS_PER_DEGREE_LAT = 110650;
+
+/** `point` moved `meters` due north (approximate: tests compare distances with a tolerance). */
+function offsetNorth(point, meters) {
+  return { ...point, lat: point.lat + meters / METERS_PER_DEGREE_LAT };
+}
+
+/**
+ * Inserts a ride directly, skipping POST /rides: tests can then create rides in any status, in
+ * the past, or overlapping, at a fraction of the remote round-trips. Resolves to its id.
+ */
+async function insertRide(driverId, overrides = {}) {
+  const {
+    start = START,
+    end = END,
+    departureTime = new Date(Date.now() + DAY),
+    status = 'OPEN',
+    seatsTotal = 3,
+    seatsAvailable = seatsTotal,
+  } = overrides;
+  const id = randomUUID();
+  await prisma.$executeRaw`
+    INSERT INTO "Ride" (
+      "id", "driverId", "startAddress", "endAddress", "startPoint", "endPoint",
+      "departureTime", "seatsTotal", "seatsAvailable", "status", "createdAt", "updatedAt"
+    ) VALUES (
+      ${id}, ${driverId}, ${start.address}, ${end.address},
+      ST_SetSRID(ST_MakePoint(${start.lng}::float8, ${start.lat}::float8), 4326)::geography,
+      ST_SetSRID(ST_MakePoint(${end.lng}::float8, ${end.lat}::float8), 4326)::geography,
+      (${departureTime.toISOString()}::timestamptz AT TIME ZONE 'UTC'),
+      ${seatsTotal}, ${seatsAvailable}, ${status}::"RideStatus", now(), now()
+    )`;
+  return id;
+}
+
 module.exports = {
+  offsetNorth,
+  insertRide,
   MINUTE,
   HOUR,
   DAY,

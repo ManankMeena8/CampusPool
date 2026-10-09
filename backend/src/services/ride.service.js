@@ -83,6 +83,41 @@ function findRidesByDriver(driverId) {
              r."departureTime" DESC`;
 }
 
+const geographyPoint = ({ lat, lng }) =>
+  Prisma.sql`ST_SetSRID(ST_MakePoint(${lng}::float8, ${lat}::float8), 4326)::geography`;
+
+/**
+ * The search query, shared by searchRides and scripts/explain-search.js so the plan printed there
+ * is the plan of the real query. Rides already departed are never matched, whatever `from` says.
+ * Fetches limit + 1 rows so the caller can tell whether there is another page.
+ */
+function buildSearchQuery(userId, q) {
+  const pickup = geographyPoint({ lat: q.pickupLat, lng: q.pickupLng });
+  const drop = geographyPoint({ lat: q.dropLat, lng: q.dropLng });
+  const from = new Date(Math.max(q.from.getTime(), Date.now()));
+  return Prisma.sql`
+    SELECT ${RIDE_COLUMNS},
+           round(ST_Distance(r."startPoint", ${pickup}))::int AS "pickupDistanceMeters",
+           round(ST_Distance(r."endPoint", ${drop}))::int AS "dropDistanceMeters"
+    FROM "Ride" r
+    JOIN "User" u ON u."id" = r."driverId"
+    WHERE r."status" = 'OPEN'
+      AND r."departureTime" >= ${utc(from)}
+      AND r."departureTime" <= ${utc(q.to)}
+      AND r."seatsAvailable" >= ${q.seats}::int
+      AND r."driverId" <> ${userId}
+      AND ST_DWithin(r."startPoint", ${pickup}, ${q.radius}::float8)
+      AND ST_DWithin(r."endPoint", ${drop}, ${q.radius}::float8)
+    ORDER BY "pickupDistanceMeters", r."departureTime", r."id"
+    LIMIT ${q.limit + 1}::int OFFSET ${q.offset}::int`;
+}
+
+/** Open rides near both the pickup and the drop-off, nearest pickup first, plus `hasMore`. */
+async function searchRides(userId, q) {
+  const rows = await prisma.$queryRaw(buildSearchQuery(userId, q));
+  return { rides: rows.slice(0, q.limit), hasMore: rows.length > q.limit };
+}
+
 async function getRide(id) {
   const ride = await findRideById(id);
   if (!ride) throw new AppError('RIDE_NOT_FOUND', 'Ride not found', 404);
@@ -156,6 +191,8 @@ async function cancelRide(driverId, id) {
 }
 
 module.exports = {
+  buildSearchQuery,
+  searchRides,
   cancelRide,
   createRide,
   getRide,

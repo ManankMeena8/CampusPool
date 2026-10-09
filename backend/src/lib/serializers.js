@@ -47,4 +47,13 @@ function toRide(row) {
   return ride;
 }
 
-module.exports = { toPublicUser, toRide };
+/** A search result: the ride plus how far its ends are from the rider's pickup and drop-off. */
+function toRideSearchResult(row) {
+  return {
+    ...toRide(row),
+    pickupDistanceMeters: row.pickupDistanceMeters,
+    dropDistanceMeters: row.dropDistanceMeters,
+  };
+}
+
+module.exports = { toPublicUser, toRide, toRideSearchResult };

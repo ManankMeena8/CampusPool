@@ -14,8 +14,15 @@ router.post(
   validate({ body: v.createRideBody }),
   asyncHandler(controller.createRide),
 );
-// /mine must stay above /:id.
+// /mine and /search must stay above /:id.
 router.get('/mine', requireAuth, validate({}), asyncHandler(controller.listMyRides));
+// No role check: anyone can look for a ride, including drivers.
+router.get(
+  '/search',
+  requireAuth,
+  validate({ query: v.searchRidesQuery }),
+  asyncHandler(controller.searchRides),
+);
 router.get(
   '/:id',
   requireAuth,

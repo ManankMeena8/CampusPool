@@ -1,5 +1,5 @@
 const rideService = require('../services/ride.service');
-const { toRide } = require('../lib/serializers');
+const { toRide, toRideSearchResult } = require('../lib/serializers');
 
 async function createRide(req, res) {
   const { ride, warnings } = await rideService.createRide(req.user.id, req.body);
@@ -9,6 +9,12 @@ async function createRide(req, res) {
 async function listMyRides(req, res) {
   const rides = await rideService.findRidesByDriver(req.user.id);
   res.json({ rides: rides.map(toRide) });
+}
+
+async function searchRides(req, res) {
+  const { rides, hasMore } = await rideService.searchRides(req.user.id, req.query);
+  const { limit, offset } = req.query;
+  res.json({ rides: rides.map(toRideSearchResult), limit, offset, hasMore });
 }
 
 async function getRide(req, res) {
@@ -21,4 +27,4 @@ async function cancelRide(req, res) {
   res.json({ ride: toRide(ride) });
 }
 
-module.exports = { createRide, listMyRides, getRide, cancelRide };
+module.exports = { createRide, listMyRides, searchRides, getRide, cancelRide };
