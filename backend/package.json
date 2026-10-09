@@ -15,7 +15,8 @@
     "format": "prettier --write .",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
-    "migrate:test": "cross-env NODE_ENV=test node scripts/migrate-test.js"
+    "migrate:test": "cross-env NODE_ENV=test node scripts/migrate-test.js",
+    "explain:search": "node scripts/explain-search.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
