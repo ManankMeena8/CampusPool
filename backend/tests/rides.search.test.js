@@ -100,6 +100,25 @@ describe('GET /rides/search', () => {
     expect(ids(await search(rider.token, { radius: 3000 }).expect(200))).toEqual([id]);
   });
 
+  it('matches a ride at the radius boundary to within a micrometre', async () => {
+    const id = await rideAt(2000);
+    // Measured on the same spheroid ST_DWithin uses. ST_Distance rounds to 1e-8 m and ST_DWithin
+    // compares the unrounded distance, so the radius brackets the boundary instead of equalling it.
+    const [{ meters }] = await prisma.$queryRaw`
+      SELECT ST_Distance("startPoint",
+        ST_SetSRID(ST_MakePoint(${START.lng}::float8, ${START.lat}::float8), 4326)::geography
+      ) AS meters
+      FROM "Ride" WHERE "id" = ${id}`;
+    const UM = 1e-6;
+
+    expect(ids(await search(rider.token, { radius: meters + UM }).expect(200))).toEqual([id]);
+    expect(ids(await search(rider.token, { radius: meters - UM }).expect(200))).toEqual([]);
+  });
+
+  it.each([500, 5000])('accepts radius %i', async (radius) => {
+    await search(rider.token, { radius }).expect(200);
+  });
+
   it('excludes rides departing outside the time window', async () => {
     const inside = await rideAt(0, 0, { departureTime: inMs(3 * HOUR) });
     await rideAt(0, 0, { departureTime: inMs(HOUR - 60 * 1000) });
