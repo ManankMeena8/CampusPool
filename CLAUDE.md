@@ -44,4 +44,5 @@ Real-time ride-pooling app for verified college students and staff.
 - OPEN rides past their departure time still show as OPEN in /rides/mine (nothing moves them to COMPLETED); the app must show them as expired
 - Cancelling a ride notifies no one yet: bookings do not exist
 - /rides/mine has no pagination
+- /rides/search matches only a ride's start and end points (each within the radius); a rider joining or leaving along the route (routeLine) is not matched yet
 - Routing uses the public OSRM demo server: rate-limited, no SLA, for light use only. Move to a self-hosted OSRM (set ROUTING_BASE_URL) before real traffic
