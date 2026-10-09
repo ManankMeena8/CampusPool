@@ -25,6 +25,7 @@ Real-time ride-pooling app for verified college students and staff.
 ## Git
 - Small commits with clear messages
 - No Co-Authored-By or Claude attribution lines in commit messages
+- Commit titles (the first line) must never contain the words "Claude", "CLAUDE.md", "Claude Code" or "Anthropic". When a commit changes CLAUDE.md, describe the content instead (for example "Record auth decisions and known gaps", "Update project conventions")
 - Never commit .env files
 
 ## Decisions so far
