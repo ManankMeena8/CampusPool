@@ -246,4 +246,4 @@ async function logout({ refreshToken }) {
   });
 }
 
-module.exports = { signup, verifyOtp, resendOtp, login, refresh, logout };
+module.exports = { signup, verifyOtp, resendOtp, login, refresh, logout, BCRYPT_ROUNDS };

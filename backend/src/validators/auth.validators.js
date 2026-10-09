@@ -38,4 +38,12 @@ const loginBody = z.object({
 
 const refreshBody = z.object({ refreshToken });
 
-module.exports = { signupBody, verifyOtpBody, resendOtpBody, loginBody, refreshBody };
+module.exports = {
+  signupEmail,
+  password,
+  signupBody,
+  verifyOtpBody,
+  resendOtpBody,
+  loginBody,
+  refreshBody,
+};
