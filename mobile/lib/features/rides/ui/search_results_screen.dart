@@ -13,6 +13,7 @@ import '../../places/ui/osm_map_layers.dart';
 import '../data/ride_models.dart';
 import '../data/ride_search.dart';
 import '../providers/ride_providers.dart';
+import 'ride_detail_screen.dart';
 import 'ride_format.dart';
 
 /// Rides matching [criteria], nearest pickup first, as a list or on a map. The next page loads
@@ -50,8 +51,10 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
     }
   }
 
-  void _open(RideSearchResult result) =>
-      context.push(Routes.rideDetailFor(result.ride.id));
+  void _open(RideSearchResult result) => context.push(
+    Routes.rideDetailFor(result.ride.id),
+    extra: RideDetailArgs(searchResult: result),
+  );
 
   @override
   Widget build(BuildContext context) {

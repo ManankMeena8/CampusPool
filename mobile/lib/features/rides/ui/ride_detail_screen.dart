@@ -16,10 +16,18 @@ import 'widgets/ride_status_chip.dart';
 /// Extra data for the detail route. Right after posting, the ride is already in hand (no refetch)
 /// and the server's warnings are shown.
 class RideDetailArgs {
-  const RideDetailArgs({this.ride, this.warnings = const []});
+  const RideDetailArgs({
+    this.ride,
+    this.warnings = const [],
+    this.searchResult,
+  });
 
   final Ride? ride;
   final List<String> warnings;
+
+  /// Set when opened from search results: shown while the full ride (with its route) loads, and
+  /// its distances from the rider's points are shown.
+  final RideSearchResult? searchResult;
 }
 
 class RideDetailScreen extends ConsumerStatefulWidget {
@@ -77,7 +85,12 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
       body = ref
           .watch(rideProvider(widget.id))
           .when(
-            loading: () => const LoadingView(message: 'Loading ride...'),
+            loading: () {
+              final preview = widget.args.searchResult?.ride;
+              return preview == null
+                  ? const LoadingView(message: 'Loading ride...')
+                  : _body(preview, routePending: true);
+            },
             error: (e, _) => ErrorView(
               message: describeError(e),
               onRetry: ApiError.from(e).code == 'RIDE_NOT_FOUND'
@@ -93,19 +106,24 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
     );
   }
 
-  Widget _body(Ride ride) {
+  /// [routePending]: [ride] is the search result's copy, which has no route yet.
+  Widget _body(Ride ride, {bool routePending = false}) {
     final now = DateTime.now();
     final auth = ref.watch(authProvider);
     final isDriver =
         auth is AuthAuthenticated && auth.user.id == ride.driver.id;
     final textTheme = Theme.of(context).textTheme;
+    final match = widget.args.searchResult;
 
     return RefreshIndicator(
       onRefresh: _refresh,
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          SizedBox(height: 280, child: RideRouteMap(ride: ride)),
+          SizedBox(
+            height: 280,
+            child: RideRouteMap(ride: ride, routePending: routePending),
+          ),
           if (widget.args.warnings.isNotEmpty)
             _WarningsCard(warnings: widget.args.warnings),
           Padding(
@@ -160,10 +178,39 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
                   icon: Icons.person,
                   text: isDriver
                       ? 'You are driving'
-                      : 'Driver: ${ride.driver.name}',
+                      : 'Driver: ${ride.driver.name} · '
+                            '${formatRating(ride.driver.ratingAvg, ride.driver.ratingCount)}',
                 ),
+                if (!isDriver && match != null && match.ride.id == ride.id)
+                  _InfoRow(
+                    icon: Icons.directions_walk,
+                    text:
+                        'Starts ${formatDistance(match.pickupDistanceMeters)} from your pickup, '
+                        'ends ${formatDistance(match.dropDistanceMeters)} from your drop-off',
+                  ),
                 if (ride.notes != null)
                   _InfoRow(icon: Icons.notes, text: ride.notes!),
+                if (!isDriver &&
+                    ride.displayStatus(now) == RideDisplayStatus.open) ...[
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    // Enabled in Phase 5, with bookings.
+                    child: FilledButton.icon(
+                      onPressed: null,
+                      icon: const Icon(Icons.event_seat),
+                      label: const Text('Request seat'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Text(
+                      'Seat requests are coming soon.',
+                      style: textTheme.bodySmall,
+                    ),
+                  ),
+                ],
                 if (isDriver && ride.canCancel(now)) ...[
                   const SizedBox(height: 24),
                   SizedBox(
@@ -188,12 +235,17 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
   }
 }
 
-/// The route as a polyline with start and end markers. Without a route (routing failed), only the
-/// markers and a note.
+/// The route as a polyline with start and end markers. Without a route (routing failed, or
+/// [routePending] while it loads), only the markers and a note.
 class RideRouteMap extends StatefulWidget {
-  const RideRouteMap({super.key, required this.ride});
+  const RideRouteMap({
+    super.key,
+    required this.ride,
+    this.routePending = false,
+  });
 
   final Ride ride;
+  final bool routePending;
 
   @override
   State<RideRouteMap> createState() => _RideRouteMapState();
@@ -269,6 +321,8 @@ class _RideRouteMapState extends State<RideRouteMap> {
                 child: Text(
                   _tilesFailing
                       ? "The map couldn't load. Check your internet connection."
+                      : widget.routePending
+                      ? 'Loading route...'
                       : 'Route preview unavailable. Showing start and end only.',
                   textAlign: TextAlign.center,
                 ),
