@@ -140,4 +140,40 @@ void main() {
     expect(find.textContaining("Couldn't load more rides."), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
   });
+
+  testWidgets('the map shows loaded rides; tapping one shows its card', (
+    tester,
+  ) async {
+    // 20 cards overflow the screen, so the list asks for no second page.
+    adapter = FakeAdapter(
+      (o) async => jsonBody(
+        200,
+        searchPageJson(
+          results(300, 20),
+          hasMore: o.queryParameters['offset'] == '0',
+        ),
+      ),
+    );
+    await pump(tester);
+    await tester.pumpAndSettle();
+    expect(offsets(), ['0']);
+
+    await tester.tap(find.byTooltip('Show map'));
+    // The map lays itself out before it builds its layers.
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(SearchResultsMap), findsOneWidget);
+    expect(find.byIcon(Icons.directions_car), findsNWidgets(20));
+    expect(find.textContaining('Showing 20 rides'), findsOneWidget);
+    expect(find.byType(SearchResultCard), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.directions_car).first);
+    await tester.pump();
+    expect(find.byType(SearchResultCard), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Show list'));
+    await tester.pump();
+    expect(find.byType(SearchResultsMap), findsNothing);
+    expect(find.text('Pickup 300 m away'), findsOneWidget);
+  });
 }

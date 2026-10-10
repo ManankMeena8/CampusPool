@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -8,13 +9,14 @@ import '../../../core/router/routes.dart';
 import '../../../core/widgets/empty_view.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/loading_view.dart';
+import '../../places/ui/osm_map_layers.dart';
 import '../data/ride_models.dart';
 import '../data/ride_search.dart';
 import '../providers/ride_providers.dart';
 import 'ride_format.dart';
 
-/// Rides matching [criteria], nearest pickup first. The next page loads when the list nears its
-/// end.
+/// Rides matching [criteria], nearest pickup first, as a list or on a map. The next page loads
+/// when the list nears its end.
 class SearchResultsScreen extends ConsumerStatefulWidget {
   const SearchResultsScreen({super.key, required this.criteria});
 
@@ -27,6 +29,8 @@ class SearchResultsScreen extends ConsumerStatefulWidget {
 
 class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
   static const emptyMessage = 'No rides found, try widening the time window';
+
+  bool _showMap = false;
 
   /// Only the [_PageFooter] being built asks for the next page, so a list shorter than the
   /// screen still loads more.
@@ -53,7 +57,16 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
   Widget build(BuildContext context) {
     final search = ref.watch(rideSearchProvider(widget.criteria));
     return Scaffold(
-      appBar: AppBar(title: const Text('Available rides')),
+      appBar: AppBar(
+        title: const Text('Available rides'),
+        actions: [
+          IconButton(
+            tooltip: _showMap ? 'Show list' : 'Show map',
+            icon: Icon(_showMap ? Icons.view_list : Icons.map_outlined),
+            onPressed: () => setState(() => _showMap = !_showMap),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           _CriteriaSummary(criteria: widget.criteria),
@@ -64,8 +77,16 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
               loading: () => const LoadingView(message: 'Searching rides...'),
               error: (e, _) =>
                   ErrorView(message: describeError(e), onRetry: _refresh),
-              data: (state) =>
-                  state.results.isEmpty ? _empty(context) : _list(state),
+              data: (state) {
+                if (state.results.isEmpty) return _empty(context);
+                if (!_showMap) return _list(state);
+                return SearchResultsMap(
+                  criteria: widget.criteria,
+                  results: state.results,
+                  hasMore: state.hasMore,
+                  onOpen: _open,
+                );
+              },
             ),
           ),
         ],
@@ -120,6 +141,161 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
                 .loadMore(),
           );
         },
+      ),
+    );
+  }
+}
+
+/// The rider's pickup and drop-off, and the start of every loaded ride. Tapping a ride shows its
+/// card; tapping the card opens it. Only loaded pages are shown.
+class SearchResultsMap extends StatefulWidget {
+  const SearchResultsMap({
+    super.key,
+    required this.criteria,
+    required this.results,
+    required this.hasMore,
+    required this.onOpen,
+  });
+
+  final RideSearchCriteria criteria;
+  final List<RideSearchResult> results;
+  final bool hasMore;
+  final ValueChanged<RideSearchResult> onOpen;
+
+  @override
+  State<SearchResultsMap> createState() => _SearchResultsMapState();
+}
+
+class _SearchResultsMapState extends State<SearchResultsMap> {
+  static const _rideMarkerSize = 36.0;
+
+  String? _selectedId;
+  bool _tilesFailing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final pickup = widget.criteria.pickup!.point;
+    final drop = widget.criteria.drop!.point;
+    final results = widget.results;
+    final selected = results.where((r) => r.ride.id == _selectedId).firstOrNull;
+    final notes = [
+      if (_tilesFailing)
+        "The map couldn't load. Check your internet connection.",
+      if (widget.hasMore)
+        'Showing ${results.length} rides · scroll the list to load more',
+    ];
+
+    return Stack(
+      children: [
+        FlutterMap(
+          options: MapOptions(
+            initialCameraFit: CameraFit.bounds(
+              bounds: LatLngBounds.fromPoints([
+                pickup,
+                drop,
+                for (final r in results) r.ride.start.point,
+              ]),
+              padding: const EdgeInsets.fromLTRB(48, 80, 48, 48),
+              maxZoom: 16,
+            ),
+            interactionOptions: const InteractionOptions(
+              flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+            ),
+            onTap: (_, _) => setState(() => _selectedId = null),
+          ),
+          children: [
+            osmTileLayer(
+              onTileError: (_, _, _) {
+                if (!_tilesFailing && mounted) {
+                  setState(() => _tilesFailing = true);
+                }
+              },
+            ),
+            MarkerLayer(
+              markers: [
+                pinMarker(
+                  drop,
+                  MapPin(color: Colors.red.shade700, icon: Icons.flag),
+                ),
+                pinMarker(
+                  pickup,
+                  MapPin(color: scheme.primary, icon: Icons.person_pin_circle),
+                ),
+                // The selected ride last, so it is drawn on top.
+                for (final r in [
+                  ...results.where((r) => r != selected),
+                  ?selected,
+                ])
+                  Marker(
+                    point: r.ride.start.point,
+                    width: _rideMarkerSize,
+                    height: _rideMarkerSize,
+                    child: _RideMarker(
+                      selected: r == selected,
+                      onTap: () => setState(() => _selectedId = r.ride.id),
+                    ),
+                  ),
+              ],
+            ),
+            osmAttribution,
+          ],
+        ),
+        if (notes.isNotEmpty)
+          Positioned(
+            left: 8,
+            right: 8,
+            top: 8,
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text(notes.join('\n'), textAlign: TextAlign.center),
+              ),
+            ),
+          ),
+        if (selected != null)
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 24,
+            child: SearchResultCard(
+              result: selected,
+              onTap: () => widget.onOpen(selected),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// A ride's start point on the results map.
+class _RideMarker extends StatelessWidget {
+  const _RideMarker({required this.selected, required this.onTap});
+
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      label: 'Ride start',
+      child: GestureDetector(
+        onTap: onTap,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: selected ? scheme.tertiary : scheme.primaryContainer,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black38)],
+          ),
+          child: Icon(
+            Icons.directions_car,
+            size: 20,
+            color: selected ? scheme.onTertiary : scheme.onPrimaryContainer,
+          ),
+        ),
       ),
     );
   }
