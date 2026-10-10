@@ -24,6 +24,16 @@ class RideRepository {
     ];
   });
 
+  /// [params] from buildSearchParams.
+  Future<RideSearchPage> searchRides(Map<String, String> params) =>
+      _call(() async {
+        final res = await _dio.get<dynamic>(
+          '/rides/search',
+          queryParameters: params,
+        );
+        return RideSearchPage.fromJson(res.data as Map<String, dynamic>);
+      });
+
   Future<Ride> getRide(String id) => _call(() async {
     final res = await _dio.get<dynamic>('/rides/${Uri.encodeComponent(id)}');
     return _ride(res.data);

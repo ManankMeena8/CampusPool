@@ -28,6 +28,45 @@ void main() {
     expect(rides, hasLength(2));
   });
 
+  test('searchRides sends the params and parses the page', () async {
+    final adapter = FakeAdapter(
+      (_) async => jsonBody(
+        200,
+        searchPageJson(
+          [searchResultJson(id: 'r1'), searchResultJson(id: 'r2')],
+          offset: 20,
+          hasMore: true,
+        ),
+      ),
+    );
+    dio.httpClientAdapter = adapter;
+
+    final page = await repo.searchRides({'pickupLat': '28.6', 'offset': '20'});
+
+    final req = adapter.requests.single;
+    expect(req.path, '/rides/search');
+    expect(req.queryParameters, {'pickupLat': '28.6', 'offset': '20'});
+    expect(page.results.map((r) => r.ride.id), ['r1', 'r2']);
+    expect(page.results.first.pickupDistanceMeters, 650);
+    expect(page.results.first.dropDistanceMeters, 1200);
+    expect(page.results.first.ride.route, isNull);
+    expect(page.offset, 20);
+    expect(page.hasMore, isTrue);
+  });
+
+  test('a search row without distances becomes BAD_RESPONSE', () async {
+    serve(
+      (_) async =>
+          jsonBody(200, searchPageJson([rideJson(includeRoute: false)])),
+    );
+    await expectLater(
+      repo.searchRides(const {}),
+      throwsA(
+        isA<ApiError>().having((e) => e.code, 'code', ApiError.badResponse),
+      ),
+    );
+  });
+
   test('a response the app cannot parse becomes BAD_RESPONSE', () async {
     serve(
       (_) async => jsonBody(200, {

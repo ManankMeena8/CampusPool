@@ -209,3 +209,49 @@ class CreatedRide {
     ],
   );
 }
+
+/// One GET /rides/search row: the ride (without a route) plus how far its start is from the
+/// rider's pickup and its end from the drop-off.
+class RideSearchResult {
+  const RideSearchResult({
+    required this.ride,
+    required this.pickupDistanceMeters,
+    required this.dropDistanceMeters,
+  });
+
+  final Ride ride;
+  final int pickupDistanceMeters;
+  final int dropDistanceMeters;
+
+  factory RideSearchResult.fromJson(Map<String, dynamic> json) =>
+      RideSearchResult(
+        ride: Ride.fromJson(json),
+        pickupDistanceMeters: (json['pickupDistanceMeters'] as num).toInt(),
+        dropDistanceMeters: (json['dropDistanceMeters'] as num).toInt(),
+      );
+}
+
+/// A page of GET /rides/search.
+class RideSearchPage {
+  const RideSearchPage({
+    required this.results,
+    required this.limit,
+    required this.offset,
+    required this.hasMore,
+  });
+
+  final List<RideSearchResult> results;
+  final int limit;
+  final int offset;
+  final bool hasMore;
+
+  factory RideSearchPage.fromJson(Map<String, dynamic> json) => RideSearchPage(
+    results: [
+      for (final r in json['rides'] as List)
+        RideSearchResult.fromJson(r as Map<String, dynamic>),
+    ],
+    limit: (json['limit'] as num).toInt(),
+    offset: (json['offset'] as num).toInt(),
+    hasMore: json['hasMore'] as bool,
+  );
+}

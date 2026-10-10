@@ -24,3 +24,24 @@ Map<String, dynamic> rideJson({
   'updatedAt': '2026-10-09T10:00:00.000Z',
   if (includeRoute) 'route': route,
 };
+
+/// A GET /rides/search row: a list ride plus the distances from the rider's points.
+Map<String, dynamic> searchResultJson({
+  String id = 'a1b2',
+  int pickupDistanceMeters = 650,
+  int dropDistanceMeters = 1200,
+  String departureTime = '2026-10-10T04:30:00.000Z',
+}) => {
+  ...rideJson(includeRoute: false, departureTime: departureTime),
+  'id': id,
+  'pickupDistanceMeters': pickupDistanceMeters,
+  'dropDistanceMeters': dropDistanceMeters,
+};
+
+/// A GET /rides/search response body.
+Map<String, dynamic> searchPageJson(
+  List<Map<String, dynamic>> rides, {
+  int limit = 20,
+  int offset = 0,
+  bool hasMore = false,
+}) => {'rides': rides, 'limit': limit, 'offset': offset, 'hasMore': hasMore};
