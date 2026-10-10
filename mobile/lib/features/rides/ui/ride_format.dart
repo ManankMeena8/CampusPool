@@ -24,3 +24,11 @@ String sentenceCase(String s) {
   final v = s.trim();
   return v.isEmpty ? v : '${v[0].toUpperCase()}${v.substring(1)}';
 }
+
+/// "★ 4.5 (12)", or "New driver" before the first rating.
+String formatRating(double avg, int count) =>
+    count == 0 ? 'New driver' : '★ ${avg.toStringAsFixed(1)} ($count)';
+
+/// "1 seat left" or "3 seats left".
+String formatSeatsLeft(int seats) =>
+    '$seats ${seats == 1 ? 'seat' : 'seats'} left';

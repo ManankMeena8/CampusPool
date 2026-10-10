@@ -12,8 +12,10 @@ import '../../features/places/ui/location_picker_screen.dart';
 import '../../features/profile/ui/profile_screen.dart';
 import '../../features/rides/ui/find_ride_screen.dart';
 import '../../features/rides/ui/my_rides_screen.dart';
+import '../../features/rides/data/ride_search.dart';
 import '../../features/rides/ui/post_ride_screen.dart';
 import '../../features/rides/ui/ride_detail_screen.dart';
+import '../../features/rides/ui/search_results_screen.dart';
 import 'routes.dart';
 
 /// Where a user in [auth] state may be at [location]; null means "stay".
@@ -68,6 +70,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: Routes.postRide, builder: (_, _) => const PostRideScreen()),
       GoRoute(path: Routes.myRides, builder: (_, _) => const MyRidesScreen()),
       GoRoute(path: Routes.findRide, builder: (_, _) => const FindRideScreen()),
+      GoRoute(
+        path: Routes.searchResults,
+        // `extra` does not survive the app being killed: start the search over.
+        redirect: (_, state) =>
+            state.extra is RideSearchCriteria ? null : Routes.findRide,
+        builder: (_, state) =>
+            SearchResultsScreen(criteria: state.extra! as RideSearchCriteria),
+      ),
       GoRoute(
         path: Routes.rideDetail,
         builder: (_, state) => RideDetailScreen(
