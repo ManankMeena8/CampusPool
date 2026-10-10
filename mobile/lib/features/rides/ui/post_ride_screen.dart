@@ -18,6 +18,7 @@ import '../data/ride_repository.dart';
 import '../providers/ride_providers.dart';
 import 'ride_detail_screen.dart';
 import 'ride_format.dart';
+import 'widgets/picker_field.dart';
 
 class PostRideScreen extends ConsumerStatefulWidget {
   const PostRideScreen({super.key});
@@ -222,7 +223,7 @@ class _PostRideScreenState extends ConsumerState<PostRideScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _PickerField(
+        PickerField(
           label: 'From',
           icon: Icons.trip_origin,
           value: _start?.address,
@@ -231,7 +232,7 @@ class _PostRideScreenState extends ConsumerState<PostRideScreen> {
           onTap: _posting ? null : () => _pickPlace(RideField.start),
         ),
         const SizedBox(height: 16),
-        _PickerField(
+        PickerField(
           label: 'To',
           icon: Icons.flag_outlined,
           value: _end?.address,
@@ -240,7 +241,7 @@ class _PostRideScreenState extends ConsumerState<PostRideScreen> {
           onTap: _posting ? null : () => _pickPlace(RideField.end),
         ),
         const SizedBox(height: 16),
-        _PickerField(
+        PickerField(
           label: 'Departure',
           icon: Icons.schedule,
           value: _departure == null ? null : formatDeparture(_departure!),
@@ -332,57 +333,6 @@ class _PostRideScreenState extends ConsumerState<PostRideScreen> {
         const SizedBox(height: 16),
         SubmitButton(label: 'Post ride', loading: _posting, onPressed: _submit),
       ],
-    );
-  }
-}
-
-/// A form field that opens a picker when tapped.
-class _PickerField extends StatelessWidget {
-  const _PickerField({
-    required this.label,
-    required this.icon,
-    required this.value,
-    required this.placeholder,
-    required this.onTap,
-    this.helper,
-    this.error,
-  });
-
-  final String label;
-  final IconData icon;
-  final String? value;
-  final String placeholder;
-  final String? helper;
-  final String? error;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
-      child: InputDecorator(
-        isEmpty: false,
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: Icon(icon),
-          suffixIcon: const Icon(Icons.chevron_right),
-          helperText: helper,
-          errorText: error,
-          errorMaxLines: 2,
-          border: const OutlineInputBorder(),
-          enabled: onTap != null,
-        ),
-        child: Text(
-          value ?? placeholder,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: value == null
-              ? theme.textTheme.bodyLarge?.copyWith(color: theme.hintColor)
-              : theme.textTheme.bodyLarge,
-        ),
-      ),
     );
   }
 }

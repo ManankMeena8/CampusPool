@@ -69,22 +69,33 @@ class _RideActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.all(16),
-    child: Row(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: FilledButton.icon(
-            onPressed: () => context.push(Routes.postRide),
-            icon: const Icon(Icons.add_road),
-            label: const Text('Post a ride'),
-          ),
+        FilledButton.icon(
+          onPressed: () => context.push(Routes.findRide),
+          icon: const Icon(Icons.search),
+          label: const Text('Find a ride'),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () => context.push(Routes.myRides),
-            icon: const Icon(Icons.list_alt),
-            label: const Text('My rides'),
-          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.tonalIcon(
+                onPressed: () => context.push(Routes.postRide),
+                icon: const Icon(Icons.add_road),
+                label: const Text('Post a ride'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => context.push(Routes.myRides),
+                icon: const Icon(Icons.list_alt),
+                label: const Text('My rides'),
+              ),
+            ),
+          ],
         ),
       ],
     ),

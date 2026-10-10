@@ -10,6 +10,7 @@ import '../../features/auth/ui/splash_screen.dart';
 import '../../features/health/ui/home_screen.dart';
 import '../../features/places/ui/location_picker_screen.dart';
 import '../../features/profile/ui/profile_screen.dart';
+import '../../features/rides/ui/find_ride_screen.dart';
 import '../../features/rides/ui/my_rides_screen.dart';
 import '../../features/rides/ui/post_ride_screen.dart';
 import '../../features/rides/ui/ride_detail_screen.dart';
@@ -66,6 +67,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: Routes.postRide, builder: (_, _) => const PostRideScreen()),
       GoRoute(path: Routes.myRides, builder: (_, _) => const MyRidesScreen()),
+      GoRoute(path: Routes.findRide, builder: (_, _) => const FindRideScreen()),
       GoRoute(
         path: Routes.rideDetail,
         builder: (_, state) => RideDetailScreen(

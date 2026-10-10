@@ -11,6 +11,10 @@ class Routes {
   static const pickLocation = '/pick-location';
   static const postRide = '/rides/new';
   static const myRides = '/rides/mine';
+  static const findRide = '/rides/find';
+
+  /// Takes the [RideSearchCriteria] as `extra`.
+  static const searchResults = '/rides/results';
 
   /// Must be registered after the fixed /rides/... paths.
   static const rideDetail = '/rides/:id';
