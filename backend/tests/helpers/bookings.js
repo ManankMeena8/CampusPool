@@ -48,6 +48,35 @@ const rideSeats = (id) =>
     select: { seatsAvailable: true, seatsTotal: true, status: true },
   });
 
+/**
+ * Calls `start()` (which sends the concurrent requests) while another connection holds the ride's
+ * row lock, and releases it once `waiters` statements are queued on locks. Without this the
+ * requests often run one after another and a race-prone implementation can still pass. Throws if
+ * they never all queue, rather than pass a test that raced nothing.
+ */
+async function whileRideLocked(rideId, waiters, start) {
+  let pending;
+  let queued = 0;
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT 1 FROM "Ride" WHERE "id" = ${rideId} FOR UPDATE`;
+      pending = start();
+      const deadline = Date.now() + 5000;
+      while (queued < waiters && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        // Not through `tx`: pg_stat_activity is snapshotted once per transaction.
+        [{ queued }] = await prisma.$queryRaw`
+          SELECT count(*)::int AS "queued" FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+      }
+    },
+    { timeout: 10000 },
+  );
+  const results = await pending;
+  if (queued < waiters) throw new Error(`Only ${queued} of ${waiters} requests queued on locks`);
+  return results;
+}
+
 module.exports = {
   PICKUP,
   DROP,
@@ -57,4 +86,5 @@ module.exports = {
   insertBooking,
   bookingStatus,
   rideSeats,
+  whileRideLocked,
 };

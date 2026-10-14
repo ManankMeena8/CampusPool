@@ -9,6 +9,7 @@ const {
   insertBooking,
   bookingStatus,
   rideSeats,
+  whileRideLocked,
 } = require('./helpers/bookings');
 
 beforeEach(resetDb);
@@ -67,7 +68,9 @@ describe('POST /bookings/:id/accept', () => {
     const { driver, rideId } = await setup({ seatsTotal: 1 });
     const ids = await pendingBookings(rideId, 5);
 
-    const results = await Promise.all(ids.map((id) => act(driver.token, id, 'accept')));
+    const results = await whileRideLocked(rideId, ids.length, () =>
+      Promise.all(ids.map((id) => act(driver.token, id, 'accept'))),
+    );
 
     const codes = results.map((r) => r.status);
     expect(codes.filter((c) => c === 200)).toHaveLength(1);
@@ -85,10 +88,9 @@ describe('POST /bookings/:id/accept', () => {
     const { driver, rider, rideId } = await setup({ seatsTotal: 4 });
     const id = await insertBooking(rideId, rider.user.id, { seats: 2 });
 
-    const results = await Promise.all([
-      act(driver.token, id, 'accept'),
-      act(driver.token, id, 'accept'),
-    ]);
+    const results = await whileRideLocked(rideId, 2, () =>
+      Promise.all([act(driver.token, id, 'accept'), act(driver.token, id, 'accept')]),
+    );
 
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
     expect(results.find((r) => r.status === 409).body.error.code).toBe('INVALID_TRANSITION');
@@ -200,10 +202,9 @@ describe('POST /bookings/:id/cancel', () => {
     const { rider, rideId } = await setup({ seatsTotal: 3, seatsAvailable: 1 });
     const id = await insertBooking(rideId, rider.user.id, { status: 'ACCEPTED', seats: 2 });
 
-    const results = await Promise.all([
-      act(rider.token, id, 'cancel'),
-      act(rider.token, id, 'cancel'),
-    ]);
+    const results = await whileRideLocked(rideId, 2, () =>
+      Promise.all([act(rider.token, id, 'cancel'), act(rider.token, id, 'cancel')]),
+    );
 
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
     expect(await rideSeats(rideId)).toMatchObject({ seatsAvailable: 3 });
