@@ -167,9 +167,12 @@ void main() {
     expect(find.textContaining('Showing 20 rides'), findsOneWidget);
     expect(find.byType(SearchResultCard), findsNothing);
 
-    await tester.tap(find.byIcon(Icons.directions_car).first);
+    // Every fixture ride starts at the same point, so the markers stack; the last one is on top
+    // and is the one a tap reaches.
+    await tester.tap(find.byIcon(Icons.directions_car).last);
     await tester.pump();
     expect(find.byType(SearchResultCard), findsOneWidget);
+    expect(find.text('Pickup 319 m away'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Show list'));
     await tester.pump();
