@@ -4,6 +4,7 @@ const prisma = require('../lib/prisma');
 const AppError = require('../lib/AppError');
 const { BOOKING_ACTIONS, assertTransition } = require('../lib/bookingTransitions');
 const { findRidesByIds, geographyPoint, utc } = require('./ride.service');
+const realtime = require('../realtime/hub');
 
 /*
  * Lock order: every transaction that touches both a ride and its bookings locks the Ride row
@@ -231,7 +232,7 @@ async function cancelBooking(riderId, id) {
     throw new AppError('FORBIDDEN', 'Only the rider who made this booking can cancel it', 403);
   }
   assertTransition('cancel', booking.status);
-  await prisma.$transaction(async (tx) => {
+  const previous = await prisma.$transaction(async (tx) => {
     const ride = await lockRide(tx, booking.rideId);
     const [{ status }] = await tx.$queryRaw`
       SELECT "status"::text AS "status" FROM "Booking" WHERE "id" = ${id} FOR UPDATE`;
@@ -253,7 +254,10 @@ async function cancelBooking(riderId, id) {
             "updatedAt" = (now() AT TIME ZONE 'UTC')
         WHERE "id" = ${booking.rideId}`;
     }
+    return status;
   }, TX_OPTIONS);
+  // After the commit: an ACCEPTED rider stops following the ride (others never could).
+  if (previous === 'ACCEPTED') await realtime.riderRemoved(booking.rideId, riderId);
   return findBookingById(id);
 }
 

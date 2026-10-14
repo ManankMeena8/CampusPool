@@ -38,6 +38,19 @@ router.post(
   validate({ params: v.rideIdParams }),
   asyncHandler(controller.cancelRide),
 );
+// Driver only, checked in the service; no role check, as for cancel.
+router.post(
+  '/:id/start',
+  requireAuth,
+  validate({ params: v.rideIdParams }),
+  asyncHandler(controller.startRide),
+);
+router.post(
+  '/:id/complete',
+  requireAuth,
+  validate({ params: v.rideIdParams }),
+  asyncHandler(controller.completeRide),
+);
 // No role check: anyone but the ride's driver can request a seat, including drivers.
 router.post(
   '/:id/bookings',

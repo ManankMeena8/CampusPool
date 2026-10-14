@@ -16,6 +16,8 @@ const BOOKING_ACTIONS = Object.freeze({
     actor: 'system',
     done: 'cancelled',
   },
+  // The driver started the ride: requests nobody accepted can no longer be.
+  rideStarted: { from: ['PENDING'], to: 'REJECTED', actor: 'system', done: 'rejected' },
 });
 
 /** Throws 409 INVALID_TRANSITION unless `action` may be applied to a booking in `status`. */

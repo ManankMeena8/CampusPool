@@ -27,4 +27,22 @@ async function cancelRide(req, res) {
   res.json({ ride: toRide(ride) });
 }
 
-module.exports = { createRide, listMyRides, searchRides, getRide, cancelRide };
+async function startRide(req, res) {
+  const ride = await rideService.startRide(req.user.id, req.params.id);
+  res.json({ ride: toRide(ride) });
+}
+
+async function completeRide(req, res) {
+  const ride = await rideService.completeRide(req.user.id, req.params.id);
+  res.json({ ride: toRide(ride) });
+}
+
+module.exports = {
+  createRide,
+  listMyRides,
+  searchRides,
+  getRide,
+  cancelRide,
+  startRide,
+  completeRide,
+};

@@ -4,12 +4,16 @@ const prisma = require('../lib/prisma');
 const AppError = require('../lib/AppError');
 const { BOOKING_ACTIONS } = require('../lib/bookingTransitions');
 const routing = require('./routing.service');
+const realtime = require('../realtime/hub');
 
 const HOUR_MS = 60 * 60 * 1000;
 const OVERLAP_WINDOW_MS = HOUR_MS;
 const SNAP_WARNING_METERS = 300;
 const ACTIVE_STATUSES = ['OPEN', 'FULL', 'IN_PROGRESS'];
 const CANCELLABLE_STATUSES = ['OPEN', 'FULL'];
+const STARTABLE_STATUSES = ['OPEN', 'FULL'];
+// A ride can be started from 30 minutes before its departure time until 30 minutes after it.
+const START_WINDOW_MS = 30 * 60 * 1000;
 
 /** Rejects if the driver has an active ride departing less than an hour before or after `departureTime`. */
 async function assertNoOverlap(db, driverId, departureTime) {
@@ -195,27 +199,114 @@ async function cancelRide(driverId, id) {
     return cancelled;
   });
   if (count === 0) {
-    const ride = await prisma.ride.findUnique({
-      where: { id },
-      select: { driverId: true, status: true },
+    await refuseDriverAction(id, driverId, {
+      verb: 'cancel',
+      done: 'cancelled',
+      allowed: CANCELLABLE_STATUSES,
+      code: 'RIDE_NOT_CANCELLABLE',
     });
-    if (!ride) throw new AppError('RIDE_NOT_FOUND', 'Ride not found', 404);
-    if (ride.driverId !== driverId) {
-      throw new AppError('FORBIDDEN', 'Only the driver can cancel this ride', 403);
+  }
+  // Only after the commit: never announce a change that could still roll back.
+  await realtime.rideStatusChanged({ id, driverId, status: 'CANCELLED' });
+  return findRideById(id);
+}
+
+/**
+ * Starts an OPEN or FULL ride within START_WINDOW_MS of its departure (either side) and rejects
+ * its PENDING bookings, which nobody could accept once the ride is under way. Same shape as
+ * cancelRide: one conditional UPDATE on the ride, then its bookings (the lock order).
+ */
+async function startRide(driverId, id) {
+  const now = Date.now();
+  const { from, to } = BOOKING_ACTIONS.rideStarted;
+  const count = await prisma.$transaction(async (tx) => {
+    const { count: started } = await tx.ride.updateMany({
+      where: {
+        id,
+        driverId,
+        status: { in: STARTABLE_STATUSES },
+        departureTime: {
+          gte: new Date(now - START_WINDOW_MS),
+          lte: new Date(now + START_WINDOW_MS),
+        },
+      },
+      data: { status: 'IN_PROGRESS' },
+    });
+    if (started > 0) {
+      await tx.booking.updateMany({
+        where: { rideId: id, status: { in: from } },
+        data: { status: to },
+      });
     }
+    return started;
+  });
+  if (count === 0) {
+    const ride = await refuseDriverAction(id, driverId, {
+      verb: 'start',
+      done: 'started',
+      allowed: STARTABLE_STATUSES,
+      code: 'RIDE_NOT_STARTABLE',
+    });
     throw new AppError(
-      'RIDE_NOT_CANCELLABLE',
-      `A ${ride.status} ride cannot be cancelled; only OPEN or FULL rides can`,
+      'RIDE_NOT_STARTABLE',
+      ride.departureTime.getTime() > now
+        ? 'A ride can be started at most 30 minutes before its departure time'
+        : 'A ride cannot be started more than 30 minutes after its departure time',
       409,
     );
   }
+  await realtime.rideStatusChanged({ id, driverId, status: 'IN_PROGRESS' });
   return findRideById(id);
+}
+
+/** Completes an IN_PROGRESS ride. Its ACCEPTED bookings stay ACCEPTED. */
+async function completeRide(driverId, id) {
+  const { count } = await prisma.ride.updateMany({
+    where: { id, driverId, status: 'IN_PROGRESS' },
+    data: { status: 'COMPLETED' },
+  });
+  if (count === 0) {
+    await refuseDriverAction(id, driverId, {
+      verb: 'complete',
+      done: 'completed',
+      allowed: ['IN_PROGRESS'],
+      code: 'RIDE_NOT_COMPLETABLE',
+    });
+  }
+  await realtime.rideStatusChanged({ id, driverId, status: 'COMPLETED' });
+  return findRideById(id);
+}
+
+/**
+ * Picks the error for a driver action whose conditional UPDATE matched no row: 404, 403, or 409
+ * `code` when the status is not one of `allowed`. Otherwise returns the ride, for the caller to
+ * explain which of its own conditions failed.
+ */
+async function refuseDriverAction(id, driverId, { verb, done, allowed, code }) {
+  const ride = await prisma.ride.findUnique({
+    where: { id },
+    select: { driverId: true, status: true, departureTime: true },
+  });
+  if (!ride) throw new AppError('RIDE_NOT_FOUND', 'Ride not found', 404);
+  if (ride.driverId !== driverId) {
+    throw new AppError('FORBIDDEN', `Only the driver can ${verb} this ride`, 403);
+  }
+  if (!allowed.includes(ride.status)) {
+    throw new AppError(
+      code,
+      `A ${ride.status} ride cannot be ${done}; only ${allowed.join(' or ')} rides can`,
+      409,
+    );
+  }
+  return ride;
 }
 
 module.exports = {
   buildSearchQuery,
   searchRides,
   cancelRide,
+  startRide,
+  completeRide,
   createRide,
   getRide,
   findRidesByDriver,
@@ -224,4 +315,5 @@ module.exports = {
   utc,
   OVERLAP_WINDOW_MS,
   SNAP_WARNING_METERS,
+  START_WINDOW_MS,
 };
