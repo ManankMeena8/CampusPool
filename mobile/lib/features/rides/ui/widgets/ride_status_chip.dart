@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/widgets/status_chip.dart';
 import '../../data/ride_models.dart';
 
 class RideStatusChip extends StatelessWidget {
@@ -32,19 +33,6 @@ class RideStatusChip extends StatelessWidget {
         scheme.onSurfaceVariant,
       ),
     };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Text(
-        status.label,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: fg,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
+    return StatusChip(label: status.label, background: bg, foreground: fg);
   }
 }

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/api/api_call.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_error.dart';
 import 'ride_models.dart';
@@ -11,12 +12,12 @@ class RideRepository {
 
   final Dio _dio;
 
-  Future<CreatedRide> createRide(NewRide ride) => _call(() async {
+  Future<CreatedRide> createRide(NewRide ride) => apiCall(() async {
     final res = await _dio.post<dynamic>('/rides', data: ride.toJson());
     return CreatedRide.fromJson(res.data as Map<String, dynamic>);
   });
 
-  Future<List<Ride>> myRides() => _call(() async {
+  Future<List<Ride>> myRides() => apiCall(() async {
     final res = await _dio.get<dynamic>('/rides/mine');
     return [
       for (final r in (res.data as Map<String, dynamic>)['rides'] as List)
@@ -26,7 +27,7 @@ class RideRepository {
 
   /// [params] from buildSearchParams.
   Future<RideSearchPage> searchRides(Map<String, String> params) =>
-      _call(() async {
+      apiCall(() async {
         final res = await _dio.get<dynamic>(
           '/rides/search',
           queryParameters: params,
@@ -34,12 +35,12 @@ class RideRepository {
         return RideSearchPage.fromJson(res.data as Map<String, dynamic>);
       });
 
-  Future<Ride> getRide(String id) => _call(() async {
+  Future<Ride> getRide(String id) => apiCall(() async {
     final res = await _dio.get<dynamic>('/rides/${Uri.encodeComponent(id)}');
     return _ride(res.data);
   });
 
-  Future<Ride> cancelRide(String id) => _call(() async {
+  Future<Ride> cancelRide(String id) => apiCall(() async {
     final res = await _dio.post<dynamic>(
       '/rides/${Uri.encodeComponent(id)}/cancel',
     );
@@ -49,22 +50,6 @@ class RideRepository {
   static Ride _ride(Object? data) => Ride.fromJson(
     (data as Map<String, dynamic>)['ride'] as Map<String, dynamic>,
   );
-
-  static Future<T> _call<T>(Future<T> Function() body) async {
-    try {
-      return await body();
-    } on DioException catch (e) {
-      throw ApiError.from(e);
-    } on ApiError {
-      rethrow;
-    } catch (_) {
-      // FormatException / TypeError from an unexpected response shape.
-      throw const ApiError(
-        code: ApiError.badResponse,
-        message: 'The server sent a response the app could not read.',
-      );
-    }
-  }
 }
 
 final rideRepositoryProvider = Provider<RideRepository>(
