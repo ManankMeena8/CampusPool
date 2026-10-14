@@ -22,6 +22,11 @@ class Routes {
 
   static String rideDetailFor(String id) => '/rides/${Uri.encodeComponent(id)}';
 
+  /// Nested under [rideDetail], so back goes to the ride's details.
+  static const liveRide = 'live';
+
+  static String liveRideFor(String id) => '${rideDetailFor(id)}/live';
+
   /// Screens reachable without a session.
   static const public = {login, signup, verifyOtp};
 

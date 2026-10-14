@@ -17,6 +17,7 @@ import '../../features/rides/data/ride_search.dart';
 import '../../features/rides/ui/post_ride_screen.dart';
 import '../../features/rides/ui/ride_detail_screen.dart';
 import '../../features/rides/ui/search_results_screen.dart';
+import '../../features/tracking/ui/live_ride_screen.dart';
 import 'routes.dart';
 
 /// Where a user in [auth] state may be at [location]; null means "stay".
@@ -89,6 +90,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           id: state.pathParameters['id']!,
           args: state.extra as RideDetailArgs? ?? const RideDetailArgs(),
         ),
+        routes: [
+          GoRoute(
+            path: Routes.liveRide,
+            builder: (_, state) =>
+                LiveRideScreen(rideId: state.pathParameters['id']!),
+          ),
+        ],
       ),
     ],
   );
