@@ -43,6 +43,12 @@ Real-time ride-pooling app for verified college students and staff.
 - Lock order: any transaction touching a ride and its bookings locks the Ride row first, then Booking rows
 - PENDING bookings on a FULL ride stay PENDING and can be accepted if a seat frees up; new requests on a FULL ride are refused
 - Accepting on a ride that has departed is refused (409 SEAT_UNAVAILABLE). A rider can cancel while the ride is OPEN or FULL, even after departure. No role check on booking a seat: anyone but the ride's driver can
+- Ride lifecycle: POST /rides/:id/start (driver, OPEN or FULL, from 30 min before to 30 min after departure; PENDING bookings become REJECTED) and POST /rides/:id/complete (driver, IN_PROGRESS; bookings stay ACCEPTED). IN_PROGRESS and COMPLETED rides refuse ride cancel, rider cancel, accept and new requests (409)
+- Realtime: Socket.io on the API's HTTP server (src/realtime). Handshake sends the access token as auth.token; an event after the token expires gets TOKEN_EXPIRED and the socket is disconnected, so the app reconnects with a refreshed token. Every event acks { ok: true, ... } or the REST error body
+  - ride:join {rideId}: driver or ACCEPTED riders only; acks { ride: {id, status}, lastLocation } (lastLocation only while IN_PROGRESS). Rooms: ride:<id>, plus user:<id> per socket, used to remove a rider whose ACCEPTED booking is cancelled
+  - location:update {rideId, lat, lng, heading?, speed?}: driver only, IN_PROGRESS only, at most 1 per 2 s per driver (THROTTLED); broadcast as driver:location to the rest of the room
+  - ride:status {rideId, status} on start, complete and ride cancel. Emits and location/throttle cleanup happen in src/realtime/hub.js, called only after the transaction commits, and never fail the request
+  - The location store sits behind async get/set/delete (src/realtime/locationStore.js) so Redis can replace it
 
 ## Known gaps (decided, not forgotten)
 - Login rate limiting by IP + email: add in Phase 7.1 (trust proxy = 1 on Render, limiter disabled in tests)
@@ -52,7 +58,11 @@ Real-time ride-pooling app for verified college students and staff.
 - Signup 409 and resend 429 reveal account state: accepted by design
 - A refresh that times out, or returns 200 with a body the client can't parse, after the server already rotated the token makes the retry look like reuse, which logs the user out everywhere. Accepted for the MVP; possible fix is a short server-side grace window.
 - OPEN rides past their departure time still show as OPEN in /rides/mine (nothing moves them to COMPLETED); the app must show them as expired
-- Cancelling a ride cancels its bookings but notifies no one yet; neither do booking requests, accepts, rejects or cancels
+- Cancelling a ride emits ride:status only to sockets in its room; there are no push notifications (FCM) for it, or for booking requests, accepts, rejects or cancels, yet. OPEN/FULL seat changes emit nothing
+- Last locations and the location throttle live in one process's memory: the API must run as a single instance until they move to Redis, and a restart forgets the last locations
+- Nothing completes an IN_PROGRESS ride the driver forgets to complete: it stays IN_PROGRESS (and keeps counting for the 1-hour overlap rule). A driver more than 30 min late cannot start the ride, which stays OPEN
+- A location update checked just before a complete commits can be stored after the clear, leaving one stale entry in memory (never returned: joins only return locations for IN_PROGRESS rides)
+- Driver locations are not checked for plausibility (jumps, speed) or against the route
 - After a booking is accepted, rider and driver have no way to contact each other (no phone number shown, no chat) until chat in Part B
 - A booking the rider cancelled shows as "Ride cancelled" (not "Cancelled") if the driver later cancels the ride: the app can't tell which came first. Fix needs the server to record who cancelled
 - /rides/mine, /bookings/mine and /rides/:id/bookings have no pagination; the My Rides / My Bookings filters are client-side and must move to the server if pagination is added
