@@ -5,13 +5,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/app_config.dart';
 import '../storage/token_store.dart';
 import 'auth_interceptor.dart';
+import 'session_refresher.dart';
 
 final appConfigProvider = Provider<AppConfig>(
   (_) => AppConfig.fromEnvironment(),
 );
 
 /// The single dio client for all API calls.
-final dioProvider = Provider<Dio>((ref) {
+final dioProvider = Provider<Dio>((ref) => ref.watch(_apiClientProvider).dio);
+
+/// The refresher the dio client uses, for anything else that needs a valid access token (the
+/// realtime socket), so every refresh goes through the same single-flight call.
+final sessionRefresherProvider = Provider<SessionRefresher>(
+  (ref) => ref.watch(_apiClientProvider).refresher,
+);
+
+final _apiClientProvider = Provider<({Dio dio, SessionRefresher refresher})>((
+  ref,
+) {
   final config = ref.watch(appConfigProvider);
   final dio = Dio(
     BaseOptions(
@@ -23,8 +34,10 @@ final dioProvider = Provider<Dio>((ref) {
     ),
   );
 
+  final tokens = ref.watch(tokenStoreProvider);
+  final refresher = SessionRefresher(dio: dio, tokens: tokens);
   dio.interceptors.add(
-    AuthInterceptor(dio: dio, tokens: ref.watch(tokenStoreProvider)),
+    AuthInterceptor(dio: dio, tokens: tokens, refresher: refresher),
   );
 
   if (kDebugMode) {
@@ -33,5 +46,5 @@ final dioProvider = Provider<Dio>((ref) {
       LogInterceptor(requestHeader: false, responseHeader: false),
     );
   }
-  return dio;
+  return (dio: dio, refresher: refresher);
 });
