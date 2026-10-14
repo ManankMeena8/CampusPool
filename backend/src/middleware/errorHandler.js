@@ -17,39 +17,33 @@ function describeForLog(err) {
   return err;
 }
 
-// Express identifies error middleware by its 4-argument signature.
-function errorHandler(err, _req, res, _next) {
-  if (err instanceof AppError) {
-    return res.status(err.status).json({ error: { code: err.code, message: err.message } });
-  }
+const body = (code, message) => ({ error: { code, message } });
+
+/** Maps any error to { status, body } in the API's error format. Shared with Socket.io acks. */
+function toErrorResponse(err) {
+  if (err instanceof AppError) return { status: err.status, body: body(err.code, err.message) };
   if (err instanceof ZodError) {
-    return res.status(400).json({
-      error: {
-        code: 'VALIDATION_ERROR',
-        message: err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
-      },
-    });
+    const message = err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+    return { status: 400, body: body('VALIDATION_ERROR', message) };
   }
   if (err.type === 'entity.parse.failed') {
-    return res
-      .status(400)
-      .json({ error: { code: 'INVALID_JSON', message: 'Malformed JSON body' } });
+    return { status: 400, body: body('INVALID_JSON', 'Malformed JSON body') };
   }
   if (err.type === 'entity.too.large') {
-    return res
-      .status(413)
-      .json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body too large' } });
+    return { status: 413, body: body('PAYLOAD_TOO_LARGE', 'Request body too large') };
   }
   // Other client errors raised by Express/body-parser (bad URL encoding, unsupported charset...).
   if (Number.isInteger(err.status) && err.status >= 400 && err.status < 500) {
-    return res
-      .status(err.status)
-      .json({ error: { code: 'BAD_REQUEST', message: 'Malformed request' } });
+    return { status: err.status, body: body('BAD_REQUEST', 'Malformed request') };
   }
   if (env.NODE_ENV !== 'test') console.error(describeForLog(err));
-  return res
-    .status(500)
-    .json({ error: { code: 'INTERNAL_ERROR', message: 'Something went wrong' } });
+  return { status: 500, body: body('INTERNAL_ERROR', 'Something went wrong') };
 }
 
-module.exports = { notFound, errorHandler, describeForLog };
+// Express identifies error middleware by its 4-argument signature.
+function errorHandler(err, _req, res, _next) {
+  const { status, body: payload } = toErrorResponse(err);
+  res.status(status).json(payload);
+}
+
+module.exports = { notFound, errorHandler, toErrorResponse, describeForLog };
