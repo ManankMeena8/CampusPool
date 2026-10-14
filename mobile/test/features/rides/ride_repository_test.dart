@@ -1,4 +1,5 @@
 import 'package:campuspool/core/api/api_error.dart';
+import 'package:campuspool/features/rides/data/ride_models.dart';
 import 'package:campuspool/features/rides/data/ride_repository.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -80,6 +81,58 @@ void main() {
       repo.getRide('a1b2'),
       throwsA(
         isA<ApiError>().having((e) => e.code, 'code', ApiError.badResponse),
+      ),
+    );
+  });
+
+  test('startRide posts to /start and returns the started ride', () async {
+    serve((o) async {
+      expect(o.method, 'POST');
+      expect(o.path, '/rides/a1b2/start');
+      return jsonBody(200, {'ride': rideJson(status: 'IN_PROGRESS')});
+    });
+    final ride = await repo.startRide('a1b2');
+    expect(ride.status, RideStatus.inProgress);
+  });
+
+  test('startRide passes the window message through', () async {
+    serve(
+      (_) async => apiErrorBody(
+        409,
+        'RIDE_NOT_STARTABLE',
+        'A ride can be started at most 30 minutes before its departure time',
+      ),
+    );
+    await expectLater(
+      repo.startRide('a1b2'),
+      throwsA(
+        isA<ApiError>()
+            .having((e) => e.code, 'code', 'RIDE_NOT_STARTABLE')
+            .having((e) => e.message, 'message', contains('30 minutes')),
+      ),
+    );
+  });
+
+  test('completeRide posts to /complete and returns the ride', () async {
+    serve((o) async {
+      expect(o.method, 'POST');
+      expect(o.path, '/rides/a1b2/complete');
+      return jsonBody(200, {'ride': rideJson(status: 'COMPLETED')});
+    });
+    final ride = await repo.completeRide('a1b2');
+    expect(ride.status, RideStatus.completed);
+  });
+
+  test('completeRide on a ride that is not in progress', () async {
+    serve((_) async => apiErrorBody(409, 'RIDE_NOT_COMPLETABLE'));
+    await expectLater(
+      repo.completeRide('a1b2'),
+      throwsA(
+        isA<ApiError>().having(
+          (e) => e.message,
+          'message',
+          'This ride is no longer in progress.',
+        ),
       ),
     );
   });

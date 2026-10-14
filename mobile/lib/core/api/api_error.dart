@@ -132,6 +132,10 @@ class ApiError implements Exception {
             'Rides must be at least 1 hour apart.';
       case 'RIDE_NOT_CANCELLABLE':
         return 'This ride can no longer be cancelled.';
+      case 'RIDE_NOT_COMPLETABLE':
+        return 'This ride is no longer in progress.';
+      case 'RIDE_NOT_IN_PROGRESS':
+        return 'This ride is not in progress.';
       case 'RIDE_NOT_FOUND':
         return 'This ride no longer exists.';
       case 'FORBIDDEN':

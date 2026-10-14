@@ -193,6 +193,30 @@ void main() {
       expect(ride('FULL', past).canCancel(now), isFalse);
       expect(ride('CANCELLED', future).canCancel(now), isFalse);
     });
+
+    test(
+      'OPEN and FULL rides can be started within 30 minutes of departure',
+      () {
+        const window = Ride.startWindow;
+        for (final status in ['OPEN', 'FULL']) {
+          expect(ride(status, now.add(window)).canStart(now), isTrue);
+          expect(ride(status, now.subtract(window)).canStart(now), isTrue);
+          expect(ride(status, now).canStart(now), isTrue);
+        }
+        const second = Duration(seconds: 1);
+        expect(ride('OPEN', now.add(window + second)).canStart(now), isFalse);
+        expect(
+          ride('OPEN', now.subtract(window + second)).canStart(now),
+          isFalse,
+        );
+      },
+    );
+
+    test('other statuses can never be started', () {
+      for (final status in ['IN_PROGRESS', 'COMPLETED', 'CANCELLED']) {
+        expect(ride(status, now).canStart(now), isFalse);
+      }
+    });
   });
 
   group('CreatedRide.fromJson', () {

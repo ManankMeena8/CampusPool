@@ -47,6 +47,22 @@ class RideRepository {
     return _ride(res.data);
   });
 
+  /// The driver starts the ride: it becomes IN_PROGRESS and its PENDING requests are rejected.
+  Future<Ride> startRide(String id) => apiCall(() async {
+    final res = await _dio.post<dynamic>(
+      '/rides/${Uri.encodeComponent(id)}/start',
+    );
+    return _ride(res.data);
+  });
+
+  /// The driver ends an IN_PROGRESS ride: it becomes COMPLETED.
+  Future<Ride> completeRide(String id) => apiCall(() async {
+    final res = await _dio.post<dynamic>(
+      '/rides/${Uri.encodeComponent(id)}/complete',
+    );
+    return _ride(res.data);
+  });
+
   static Ride _ride(Object? data) => Ride.fromJson(
     (data as Map<String, dynamic>)['ride'] as Map<String, dynamic>,
   );

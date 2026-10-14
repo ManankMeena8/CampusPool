@@ -130,6 +130,17 @@ class Ride {
     }
   }
 
+  /// How far before or after departure the driver can start the ride. Must match the backend's
+  /// START_WINDOW_MS.
+  static const startWindow = Duration(minutes: 30);
+
+  /// The server's start rule: OPEN or FULL, and within [startWindow] of departure (either side).
+  /// Such a ride can show as expired (it has departed) and still be started.
+  bool canStart(DateTime now) =>
+      (status == RideStatus.open || status == RideStatus.full) &&
+      !now.isBefore(departureTime.subtract(startWindow)) &&
+      !now.isAfter(departureTime.add(startWindow));
+
   /// The server would also cancel an expired ride, but there is nothing left to cancel.
   bool canCancel(DateTime now) {
     final shown = displayStatus(now);
