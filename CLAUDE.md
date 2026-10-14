@@ -38,6 +38,11 @@ Real-time ride-pooling app for verified college students and staff.
   - The Neon test branch is still usable: set TEST_DATABASE_URL to it plus ALLOW_REMOTE_TEST_DB=1 (see backend/README.md)
 - Auth: access token 15 min, refresh token 7 days with rotation on every refresh
 - Rides: departure window, 200 m minimum trip and 1-hour overlap rule are enforced server-side; the full rule list is in the ride commit bodies
+- Bookings: allowed status transitions live only in src/lib/bookingTransitions.js; invalid ones return 409 INVALID_TRANSITION. One active (PENDING or ACCEPTED) booking per rider per ride, enforced by a partial unique index
+- Seats change only through conditional UPDATEs inside transactions (accept, rider cancel). Ride_seats_check (0 <= seatsAvailable <= seatsTotal) makes a double take or return fail loudly. There is no ride-edit endpoint; if one is added, it must refuse seat totals below the seats already ACCEPTED (409) and follow the lock order
+- Lock order: any transaction touching a ride and its bookings locks the Ride row first, then Booking rows
+- PENDING bookings on a FULL ride stay PENDING and can be accepted if a seat frees up; new requests on a FULL ride are refused
+- Accepting on a ride that has departed is refused (409 SEAT_UNAVAILABLE). A rider can cancel while the ride is OPEN or FULL, even after departure. No role check on booking a seat: anyone but the ride's driver can
 
 ## Known gaps (decided, not forgotten)
 - Login rate limiting by IP + email: add in Phase 7.1 (trust proxy = 1 on Render, limiter disabled in tests)
@@ -47,7 +52,8 @@ Real-time ride-pooling app for verified college students and staff.
 - Signup 409 and resend 429 reveal account state: accepted by design
 - A refresh that times out, or returns 200 with a body the client can't parse, after the server already rotated the token makes the retry look like reuse, which logs the user out everywhere. Accepted for the MVP; possible fix is a short server-side grace window.
 - OPEN rides past their departure time still show as OPEN in /rides/mine (nothing moves them to COMPLETED); the app must show them as expired
-- Cancelling a ride notifies no one yet: bookings do not exist
-- /rides/mine has no pagination
+- Cancelling a ride cancels its bookings but notifies no one yet; neither do booking requests, accepts, rejects or cancels
+- /rides/mine, /bookings/mine and /rides/:id/bookings have no pagination
+- A booking's pickup and drop points are not checked against the ride's route or ends
 - /rides/search matches only a ride's start and end points (each within the radius); a rider joining or leaving along the route (routeLine) is not matched yet
 - Routing uses the public OSRM demo server: rate-limited, no SLA, for light use only. Move to a self-hosted OSRM (set ROUTING_BASE_URL) before real traffic
