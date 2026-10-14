@@ -30,7 +30,12 @@ Real-time ride-pooling app for verified college students and staff.
 
 ## Decisions so far
 - Backend: Express 4, Prisma 6; controllers are wrapped in asyncHandler (no try/catch)
-- Tests use TEST_DATABASE_URL (a separate Neon branch), never the dev database
+- Tests use a local PostgreSQL 18 + PostGIS 3.6 database in Docker (matches Neon), never the dev database:
+  container campuspool-test-db, port 5433, db campuspool_test, data on tmpfs, fsync off
+  - Commands (in backend/): `npm run db:test:up`, `npm test` (runs migrate:test first), `npm run db:test:down`
+  - backend/.env.test (gitignored; copy .env.test.example) sets TEST_DATABASE_URL; precedence is shell > .env.test > .env
+  - tests/setup.js refuses the dev DATABASE_URL (read from .env), and any remote URL unless ALLOW_REMOTE_TEST_DB=1
+  - The Neon test branch is still usable: set TEST_DATABASE_URL to it plus ALLOW_REMOTE_TEST_DB=1 (see backend/README.md)
 - Auth: access token 15 min, refresh token 7 days with rotation on every refresh
 - Rides: departure window, 200 m minimum trip and 1-hour overlap rule are enforced server-side; the full rule list is in the ride commit bodies
 
