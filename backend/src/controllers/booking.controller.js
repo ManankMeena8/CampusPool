@@ -16,4 +16,17 @@ async function listMyBookings(req, res) {
   res.json({ bookings: bookings.map(toBooking) });
 }
 
-module.exports = { requestBooking, listRideBookings, listMyBookings };
+// accept, reject and cancel share one shape: act on the booking, return it.
+const act = (serviceFn) => async (req, res) => {
+  const booking = await serviceFn(req.user.id, req.params.id);
+  res.json({ booking: toBooking(booking) });
+};
+
+module.exports = {
+  requestBooking,
+  listRideBookings,
+  listMyBookings,
+  acceptBooking: act(bookingService.acceptBooking),
+  rejectBooking: act(bookingService.rejectBooking),
+  cancelBooking: act(bookingService.cancelBooking),
+};
