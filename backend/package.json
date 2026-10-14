@@ -10,12 +10,14 @@
   "scripts": {
     "dev": "cross-env NODE_ENV=development nodemon src/server.js",
     "start": "cross-env NODE_ENV=production node src/server.js",
-    "test": "cross-env NODE_ENV=test jest --runInBand",
+    "test": "npm run migrate:test && cross-env NODE_ENV=test jest --runInBand",
     "lint": "eslint .",
     "format": "prettier --write .",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "migrate:test": "cross-env NODE_ENV=test node scripts/migrate-test.js",
+    "db:test:up": "docker compose -f docker-compose.test.yml up -d --wait",
+    "db:test:down": "docker compose -f docker-compose.test.yml down",
     "explain:search": "node scripts/explain-search.js",
     "seed:dev": "node scripts/seed-dev.js"
   },

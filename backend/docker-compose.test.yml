@@ -1,0 +1,24 @@
+# Throwaway PostGIS database for the Jest suite only (see README "Tests").
+# Matches Neon: PostgreSQL 18.6, PostGIS 3.6.4. Port 5433 so it never clashes with another Postgres.
+services:
+  test-db:
+    image: postgis/postgis:18-3.6
+    container_name: campuspool-test-db
+    environment:
+      POSTGRES_USER: campuspool
+      POSTGRES_PASSWORD: campuspool
+      POSTGRES_DB: campuspool_test
+    ports:
+      - '5433:5432'
+    # Durability off: the data is disposable and this makes TRUNCATE-heavy tests faster.
+    command: postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+    # In memory: every `down` starts the next run from an empty database.
+    # Postgres 18 images keep PGDATA under /var/lib/postgresql/18/docker, so mount the parent.
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      # TCP check: during first-start init the server only listens on the Unix socket.
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U campuspool -d campuspool_test']
+      interval: 2s
+      timeout: 3s
+      retries: 30
