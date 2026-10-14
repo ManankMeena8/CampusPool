@@ -8,7 +8,9 @@ import '../../../core/api/api_error.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/widgets/empty_view.dart';
 import '../../../core/widgets/error_view.dart';
+import '../../../core/widgets/filter_chip_bar.dart';
 import '../../../core/widgets/loading_view.dart';
+import '../data/ride_filters.dart';
 import '../data/ride_models.dart';
 import '../providers/ride_providers.dart';
 import 'ride_format.dart';
@@ -27,6 +29,9 @@ class _MyRidesScreenState extends ConsumerState<MyRidesScreen> {
   /// Rebuilds every minute so rides flip to Expired at their departure time.
   late final Timer _tick;
   final _cancelling = <String>{};
+
+  /// Kept while the screen is open, through refreshes.
+  RideFilter _filter = RideFilter.upcoming;
 
   @override
   void initState() {
@@ -95,20 +100,48 @@ class _MyRidesScreenState extends ConsumerState<MyRidesScreen> {
             );
           }
           final now = DateTime.now();
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-              itemCount: rides.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (_, i) => _RideCard(
-                ride: rides[i],
-                now: now,
-                cancelling: _cancelling.contains(rides[i].id),
-                onTap: () => _open(rides[i]),
-                onCancel: () => _cancel(rides[i]),
+          final counts = countRides(rides, now);
+          final shown = filterRides(rides, _filter, now);
+          return Column(
+            children: [
+              FilterChipBar<RideFilter>(
+                options: RideFilter.values,
+                selected: _filter,
+                label: (f) => '${f.label} (${counts[f]})',
+                onSelected: (f) => setState(() => _filter = f),
               ),
-            ),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: shown.isEmpty
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.only(top: 48),
+                          children: [
+                            EmptyView(
+                              icon: Icons.directions_car_outlined,
+                              message:
+                                  'No ${_filter.label.toLowerCase()} rides',
+                            ),
+                          ],
+                        )
+                      : ListView.separated(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                          itemCount: shown.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (_, i) => _RideCard(
+                            ride: shown[i],
+                            now: now,
+                            cancelling: _cancelling.contains(shown[i].id),
+                            onTap: () => _open(shown[i]),
+                            onCancel: () => _cancel(shown[i]),
+                          ),
+                        ),
+                ),
+              ),
+            ],
           );
         },
       ),
