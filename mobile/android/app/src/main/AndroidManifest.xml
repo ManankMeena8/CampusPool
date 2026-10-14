@@ -2,6 +2,18 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Live ride tracking: geolocator runs a foreground service (declared in its own manifest
+         with foregroundServiceType="location") so the driver's location keeps flowing with the
+         screen off. It is started from the foreground, so the while-in-use location permission
+         is enough: no ACCESS_BACKGROUND_LOCATION. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- Android 14+: required for a service of type "location". -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <!-- Android 13+: needed to show the service's notification. Requested at runtime in Phase 7
+         (firebase_messaging); without it tracking still runs, the notification is just hidden. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- The wake and wifi locks that keep the CPU and wifi up while the screen is off. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
     <application
         android:label="campuspool"
