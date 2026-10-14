@@ -110,9 +110,10 @@ class LiveRideController extends Notifier<LiveRideState> {
     final connection = ref.watch(rideTrackingConnectionProvider(args.rideId));
     _connection = connection;
     final events = connection.events.listen(_onEvent);
+    // No state change here: Riverpod forbids it inside onDispose (also run on a rebuild).
     ref.onDispose(() {
       events.cancel();
-      _stopTracking();
+      _releaseTracker();
     });
     connection.start();
     return LiveRideState(connection: connection.state);
@@ -185,13 +186,20 @@ class LiveRideController extends Notifier<LiveRideState> {
   }
 
   void _stopTracking() {
+    if (_releaseTracker() && ref.mounted) {
+      state = state.copyWith(tracker: const TrackerStopped());
+    }
+  }
+
+  /// Stops the tracker and its status subscription. False when there was none.
+  bool _releaseTracker() {
     _trackerStatuses?.cancel();
     _trackerStatuses = null;
     final tracker = _tracker;
-    if (tracker == null) return;
+    if (tracker == null) return false;
     _tracker = null;
     tracker.stop();
-    if (ref.mounted) state = state.copyWith(tracker: const TrackerStopped());
+    return true;
   }
 }
 

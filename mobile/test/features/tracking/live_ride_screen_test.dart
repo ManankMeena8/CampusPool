@@ -387,6 +387,31 @@ void main() {
       await close(tester);
     });
 
+    testWidgets('a new connection stops the old tracker before starting one', (
+      tester,
+    ) async {
+      await open(tester, userId: driverId);
+      final oldGps = gps.positionsController;
+      final oldSocket = sockets.last;
+      expect(gps.listening, isTrue);
+
+      ProviderScope.containerOf(
+        tester.element(find.byType(LiveRideMap)),
+      ).invalidate(rideTrackingConnectionProvider(rideId));
+      await settle(tester);
+      expect(oldSocket.disposed, isTrue);
+      expect(oldGps.hasListener, isFalse);
+
+      sockets.last.serverAccepts();
+      await settle(tester);
+      expect(gps.subscriptions, 2);
+      expect(gps.listening, isTrue);
+      expect(tester.takeException(), isNull);
+
+      await close(tester);
+      expect(gps.listening, isFalse);
+    });
+
     testWidgets('going back during the ride asks first', (tester) async {
       await open(tester, userId: driverId);
 
