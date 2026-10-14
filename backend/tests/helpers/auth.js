@@ -8,7 +8,7 @@ const PASSWORD = 'Passw0rdTest';
 
 /** Wipes app tables. Safe: NODE_ENV=test points Prisma at TEST_DATABASE_URL only. */
 async function resetDb() {
-  await prisma.$executeRaw`TRUNCATE TABLE "Ride", "RefreshToken", "EmailOtp", "User" CASCADE`;
+  await prisma.$executeRaw`TRUNCATE TABLE "Booking", "Ride", "RefreshToken", "EmailOtp", "User" CASCADE`;
   sendMail.mockClear();
 }
 

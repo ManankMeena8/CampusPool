@@ -33,6 +33,7 @@ model User {
 
   refreshTokens RefreshToken[]
   rides         Ride[]
+  bookings      Booking[]
 }
 
 model EmailOtp {
@@ -88,11 +89,41 @@ model Ride {
   createdAt       DateTime                                    @default(now())
   updatedAt       DateTime                                    @updatedAt
 
-  driver User @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  driver   User      @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  bookings Booking[]
 
   @@index([driverId, departureTime])
   @@index([status, departureTime])
   @@index([startPoint], type: Gist)
   @@index([endPoint], type: Gist)
   @@index([routeLine], type: Gist)
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+// One active (PENDING or ACCEPTED) booking per rider per ride: a partial unique index added in
+// the migration SQL, since Prisma cannot express it.
+model Booking {
+  id            String                                @id @default(uuid())
+  rideId        String
+  riderId       String
+  pickupAddress String
+  dropAddress   String
+  pickupPoint   Unsupported("geography(Point, 4326)")
+  dropPoint     Unsupported("geography(Point, 4326)")
+  seats         Int                                   @default(1)
+  status        BookingStatus                         @default(PENDING)
+  createdAt     DateTime                              @default(now())
+  updatedAt     DateTime                              @updatedAt
+
+  ride  Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  rider User @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  @@index([rideId, status])
+  @@index([riderId, createdAt])
 }
