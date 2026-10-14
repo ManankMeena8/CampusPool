@@ -136,6 +136,21 @@ class ApiError implements Exception {
         return 'This ride no longer exists.';
       case 'FORBIDDEN':
         return "You don't have permission to do this.";
+      case 'SEAT_UNAVAILABLE':
+        return "This request can't be accepted: not enough seats are left, "
+            'or the ride has already left.';
+      case 'RIDE_NOT_BOOKABLE':
+        return 'This ride is no longer taking seat requests.';
+      case 'BOOKING_EXISTS':
+        return 'You already have a seat request on this ride.';
+      case 'CANNOT_BOOK_OWN_RIDE':
+        return "You can't book a seat on your own ride.";
+      case 'INVALID_TRANSITION':
+        return 'This booking was already changed.';
+      case 'BOOKING_NOT_CANCELLABLE':
+        return 'This booking can no longer be cancelled.';
+      case 'BOOKING_NOT_FOUND':
+        return 'This booking no longer exists.';
       case 'VALIDATION_ERROR':
         // "body.email: must be ...; body.password: ..." -> "email: must be ...\npassword: ..."
         return serverMessage
