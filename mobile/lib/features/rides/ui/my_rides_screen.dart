@@ -14,6 +14,7 @@ import '../providers/ride_providers.dart';
 import 'ride_format.dart';
 import 'widgets/cancel_ride.dart';
 import 'widgets/ride_status_chip.dart';
+import 'widgets/ride_stop.dart';
 
 class MyRidesScreen extends ConsumerStatefulWidget {
   const MyRidesScreen({super.key});
@@ -163,13 +164,13 @@ class _RideCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                _Stop(
+                RideStop(
                   icon: Icons.trip_origin,
                   color: Colors.green.shade700,
                   text: ride.start.address,
                 ),
                 const SizedBox(height: 4),
-                _Stop(
+                RideStop(
                   icon: Icons.flag,
                   color: Colors.red.shade700,
                   text: ride.end.address,
@@ -202,21 +203,4 @@ class _RideCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Stop extends StatelessWidget {
-  const _Stop({required this.icon, required this.color, required this.text});
-
-  final IconData icon;
-  final Color color;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Icon(icon, size: 16, color: color),
-      const SizedBox(width: 8),
-      Expanded(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis)),
-    ],
-  );
 }

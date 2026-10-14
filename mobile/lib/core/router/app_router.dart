@@ -7,6 +7,7 @@ import '../../features/auth/ui/login_screen.dart';
 import '../../features/auth/ui/otp_screen.dart';
 import '../../features/auth/ui/signup_screen.dart';
 import '../../features/auth/ui/splash_screen.dart';
+import '../../features/bookings/ui/my_bookings_screen.dart';
 import '../../features/health/ui/home_screen.dart';
 import '../../features/places/ui/location_picker_screen.dart';
 import '../../features/profile/ui/profile_screen.dart';
@@ -70,6 +71,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: Routes.postRide, builder: (_, _) => const PostRideScreen()),
       GoRoute(path: Routes.myRides, builder: (_, _) => const MyRidesScreen()),
       GoRoute(path: Routes.findRide, builder: (_, _) => const FindRideScreen()),
+      GoRoute(
+        path: Routes.myBookings,
+        builder: (_, _) => const MyBookingsScreen(),
+      ),
       GoRoute(
         path: Routes.searchResults,
         // `extra` does not survive the app being killed: start the search over.

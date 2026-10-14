@@ -9,6 +9,7 @@ import '../../data/booking_models.dart';
 import '../../data/booking_repository.dart';
 import '../../providers/booking_providers.dart';
 import 'booking_status_chip.dart';
+import 'cancel_booking.dart';
 
 /// The rider's side of the ride detail screen: their active booking on [ride], or a Request seat
 /// button that sends the pickup, drop-off and seats of [criteria].
@@ -35,6 +36,7 @@ class RiderBookingPanel extends ConsumerStatefulWidget {
 class _RiderBookingPanelState extends ConsumerState<RiderBookingPanel> {
   /// True from the tap until the data is reloaded, so the button can't send twice.
   bool _requesting = false;
+  bool _cancelling = false;
 
   Future<void> _request(RideSearchCriteria criteria) async {
     setState(() => _requesting = true);
@@ -67,6 +69,18 @@ class _RiderBookingPanelState extends ConsumerState<RiderBookingPanel> {
     if (mounted) setState(() => _requesting = false);
   }
 
+  Future<void> _cancel(Booking booking) async {
+    setState(() => _cancelling = true);
+    final outcome = await confirmAndCancelBooking(
+      context,
+      ref,
+      booking,
+      widget.ride,
+    );
+    if (outcome.changed && mounted) await widget.onChanged();
+    if (mounted) setState(() => _cancelling = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final bookings = ref.watch(myBookingsProvider);
@@ -84,7 +98,14 @@ class _RiderBookingPanelState extends ConsumerState<RiderBookingPanel> {
         final mine = bookings
             .where((b) => b.rideId == widget.ride.id && b.isActive)
             .firstOrNull;
-        if (mine != null) return _YourBooking(booking: mine, ride: widget.ride);
+        if (mine != null) {
+          return _YourBooking(
+            booking: mine,
+            ride: widget.ride,
+            cancelling: _cancelling,
+            onCancel: () => _cancel(mine),
+          );
+        }
         if (widget.ride.displayStatus(DateTime.now()) !=
             RideDisplayStatus.open) {
           return const SizedBox.shrink();
@@ -144,10 +165,17 @@ class _RequestSeat extends StatelessWidget {
 }
 
 class _YourBooking extends StatelessWidget {
-  const _YourBooking({required this.booking, required this.ride});
+  const _YourBooking({
+    required this.booking,
+    required this.ride,
+    required this.cancelling,
+    required this.onCancel,
+  });
 
   final Booking booking;
   final Ride ride;
+  final bool cancelling;
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -173,6 +201,20 @@ class _YourBooking extends StatelessWidget {
             Text('${booking.seats} ${booking.seats == 1 ? 'seat' : 'seats'}'),
             Text('Pickup: ${booking.pickup.address}'),
             Text('Drop-off: ${booking.drop.address}'),
+            if (booking.canCancel(ride: ride)) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                  onPressed: cancelling ? null : onCancel,
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('Cancel booking'),
+                ),
+              ),
+            ],
           ],
         ),
       ),

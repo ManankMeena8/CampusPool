@@ -12,6 +12,7 @@ class Routes {
   static const postRide = '/rides/new';
   static const myRides = '/rides/mine';
   static const findRide = '/rides/find';
+  static const myBookings = '/bookings/mine';
 
   /// Takes the [RideSearchCriteria] as `extra`.
   static const searchResults = '/rides/results';

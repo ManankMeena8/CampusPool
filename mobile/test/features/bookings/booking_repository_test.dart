@@ -60,6 +60,23 @@ void main() {
     expect(bookings.first.ride, isNotNull);
   });
 
+  test(
+    'a GET /bookings/mine row without its ride becomes BAD_RESPONSE',
+    () async {
+      serve(
+        (_) async => jsonBody(200, {
+          'bookings': [bookingJson()],
+        }),
+      );
+      await expectLater(
+        repo.myBookings(),
+        throwsA(
+          isA<ApiError>().having((e) => e.code, 'code', ApiError.badResponse),
+        ),
+      );
+    },
+  );
+
   test('rideBookings parses each request with its rider', () async {
     serve(
       (_) async => jsonBody(200, {

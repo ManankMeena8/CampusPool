@@ -295,7 +295,42 @@ void main() {
     expect(find.textContaining('Request'), findsNothing);
   });
 
-  testWidgets('pull to refresh reloads the ride and the rider\'s bookings', (
+  testWidgets(
+    'Cancel booking confirms, cancels, then offers Request seat again',
+    (tester) async {
+      var status = 'PENDING';
+      await pump(
+        tester,
+        userId: 'rider',
+        handler: server(
+          myBookings: () => [bookingJson(status: status, ride: listRideJson())],
+          post: (req) async {
+            status = 'CANCELLED';
+            return jsonBody(200, {'booking': bookingJson(status: status)});
+          },
+        ),
+        args: RideDetailArgs(criteria: criteria),
+      );
+      await settle(tester);
+
+      await tapText(tester, 'Cancel booking');
+      await tester.pump();
+      expect(find.text('Cancel your booking?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Cancel booking'));
+      await settle(tester);
+
+      expect(adapter.requests.last.method, 'GET');
+      expect(
+        adapter.requests.singleWhere((r) => r.method == 'POST').path,
+        '/bookings/b1/cancel',
+      );
+      expect(find.text('Booking cancelled.'), findsOneWidget);
+      expect(find.text('Your booking'), findsNothing);
+      expect(find.text('Request 2 seats'), findsOneWidget);
+    },
+  );
+
+  testWidgets("pull to refresh reloads the ride and the rider's bookings", (
     tester,
   ) async {
     await pump(tester, userId: 'rider', handler: server());

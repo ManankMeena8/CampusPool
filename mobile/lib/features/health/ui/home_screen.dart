@@ -97,6 +97,12 @@ class _RideActions extends StatelessWidget {
             ),
           ],
         ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () => context.push(Routes.myBookings),
+          icon: const Icon(Icons.event_seat_outlined),
+          label: const Text('My bookings'),
+        ),
       ],
     ),
   );

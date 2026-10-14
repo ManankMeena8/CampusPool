@@ -22,9 +22,15 @@ class BookingRepository {
       });
 
   /// The rider's bookings, each with its ride: upcoming soonest first, then past ones.
-  Future<List<Booking>> myBookings() => apiCall(
-    () async => _bookings((await _dio.get<dynamic>('/bookings/mine')).data),
-  );
+  Future<List<Booking>> myBookings() => apiCall(() async {
+    final bookings = _bookings(
+      (await _dio.get<dynamic>('/bookings/mine')).data,
+    );
+    if (bookings.any((b) => b.ride == null)) {
+      throw const FormatException('A booking came without its ride');
+    }
+    return bookings;
+  });
 
   /// Every booking on a ride the user drives, oldest first, with the rider's public fields.
   Future<List<Booking>> rideBookings(String rideId) => apiCall(
