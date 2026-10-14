@@ -185,7 +185,7 @@ void main() {
   });
 
   test(
-    'a server disconnect (token expired on an event) reconnects at once with a forced refresh',
+    'a server disconnect (token expired, scheduled or on an event) reconnects at once with a forced refresh',
     () async {
       await connectAndJoin();
       sockets.last.drop('io server disconnect');

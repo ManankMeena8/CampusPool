@@ -204,7 +204,8 @@ class RideTrackingConnection {
 
   void _onDisconnect(int generation, String reason) {
     if (generation != _generation || _closed) return;
-    // The server only disconnects a socket whose token expired: reconnect with a fresh one now.
+    // The server only disconnects a socket whose token expired (when the token expires, or on an
+    // event sent after that): reconnect with a fresh one now.
     if (reason == 'io server disconnect') {
       _dropSocket();
       _forceRefresh = true;
