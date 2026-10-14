@@ -50,4 +50,32 @@ void main() {
       'Only 1 seat(s) are available on this ride',
     );
   });
+
+  group('fromBody (socket acks)', () {
+    test('keeps the code and uses the friendly message', () {
+      final error = ApiError.fromBody({
+        'error': {'code': 'FORBIDDEN', 'message': 'Only the driver ...'},
+      });
+      expect(error.code, 'FORBIDDEN');
+      expect(error.message, "You don't have permission to do this.");
+    });
+
+    test('passes unmapped messages through', () {
+      final error = ApiError.fromBody({
+        'error': {'code': 'THROTTLED', 'message': 'At most one update'},
+      });
+      expect(error.message, 'At most one update');
+    });
+
+    test('anything else is a bad response', () {
+      expect(ApiError.fromBody(null).code, ApiError.badResponse);
+      expect(ApiError.fromBody({'ok': true}).code, ApiError.badResponse);
+      expect(
+        ApiError.fromBody({
+          'error': {'code': 3},
+        }).code,
+        ApiError.badResponse,
+      );
+    });
+  });
 }

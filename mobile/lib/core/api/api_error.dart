@@ -104,6 +104,23 @@ class ApiError implements Exception {
     return const ApiError(code: 'UNKNOWN', message: 'Something went wrong.');
   }
 
+  /// From an error body `{ "error": { "code", "message" } }` that did not come through dio, such
+  /// as a socket acknowledgement. Anything else is a [badResponse].
+  factory ApiError.fromBody(Object? body) {
+    final error = body is Map ? body['error'] : null;
+    if (error is! Map || error['code'] is! String) {
+      return const ApiError(
+        code: badResponse,
+        message: 'The server sent a response the app could not read.',
+      );
+    }
+    final code = error['code'] as String;
+    final message = error['message'] is String
+        ? error['message'] as String
+        : '';
+    return ApiError(code: code, message: _friendly(code, message));
+  }
+
   static String _friendly(String code, String serverMessage) {
     switch (code) {
       case 'INVALID_CREDENTIALS':
