@@ -38,14 +38,19 @@ class RideSearchCriteria {
   DateTime get windowStart =>
       DateTime(date.year, date.month, date.day, from.hour, from.minute);
 
-  /// Local. At most [maxWindow] after [windowStart], by construction.
-  DateTime get windowEnd => DateTime(
-    date.year,
-    date.month,
-    date.day + (endsNextDay ? 1 : 0),
-    to.hour,
-    to.minute,
-  );
+  /// Local. Capped at [maxWindow] after [windowStart]: on a night the clocks go back, 02:00 to
+  /// 02:00 the next day is 25 hours, which the server would reject.
+  DateTime get windowEnd {
+    final end = DateTime(
+      date.year,
+      date.month,
+      date.day + (endsNextDay ? 1 : 0),
+      to.hour,
+      to.minute,
+    );
+    final latest = windowStart.add(maxWindow);
+    return end.isAfter(latest) ? latest : end;
+  }
 
   RideSearchCriteria copyWith({
     Place? pickup,
