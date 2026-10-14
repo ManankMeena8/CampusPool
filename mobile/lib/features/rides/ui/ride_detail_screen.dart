@@ -7,6 +7,7 @@ import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/loading_view.dart';
 import '../../auth/providers/auth_notifier.dart';
 import '../../bookings/providers/booking_providers.dart';
+import '../../bookings/ui/widgets/driver_requests_panel.dart';
 import '../../bookings/ui/widgets/rider_booking_panel.dart';
 import '../../places/ui/osm_map_layers.dart';
 import '../data/ride_models.dart';
@@ -61,8 +62,9 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
     return auth is AuthAuthenticated && auth.user.id == ride.driver.id;
   }
 
-  /// Reloads the ride and, for the rider, their bookings. There are no notifications yet, so
-  /// this (pull to refresh) is how changes made elsewhere show up.
+  /// Reloads the ride and, for the driver, its seat requests; for a rider, their bookings.
+  /// There are no notifications yet, so this (pull to refresh) is how a driver on this screen
+  /// sees new requests.
   Future<void> _refresh() async {
     final shown =
         _ride ??
@@ -71,7 +73,10 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
     setState(() => _ride = null);
     ref.invalidate(rideProvider(widget.id));
     final reloads = <Future<Object?>>[ref.read(rideProvider(widget.id).future)];
-    if (shown != null && !_drives(shown)) {
+    if (shown != null && _drives(shown)) {
+      ref.invalidate(rideBookingsProvider(widget.id));
+      reloads.add(ref.read(rideBookingsProvider(widget.id).future));
+    } else if (shown != null) {
       ref.invalidate(myBookingsProvider);
       reloads.add(ref.read(myBookingsProvider.future));
     }
@@ -221,6 +226,8 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
                     criteria: widget.args.criteria,
                     onChanged: _refresh,
                   ),
+                if (isDriver)
+                  DriverRequestsPanel(ride: ride, onChanged: _refresh),
                 if (isDriver && ride.canCancel(now)) ...[
                   const SizedBox(height: 24),
                   SizedBox(

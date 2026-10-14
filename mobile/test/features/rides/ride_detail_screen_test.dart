@@ -49,11 +49,12 @@ final criteria = RideSearchCriteria(
   seats: 2,
 );
 
-/// Answers GET /rides/a1b2 with [ride] and GET /bookings/mine with [myBookings]; [post] answers
-/// any POST.
+/// Answers GET /rides/a1b2 with [ride], GET /bookings/mine with [myBookings] and GET
+/// /rides/a1b2/bookings with [requests]; [post] answers any POST.
 FakeHandler server({
   Future<ResponseBody> Function()? ride,
   List<Map<String, dynamic>> Function()? myBookings,
+  List<Map<String, dynamic>> Function()? requests,
   Future<ResponseBody> Function(RequestOptions)? post,
 }) => (req) async {
   if (req.method == 'POST') return post!(req);
@@ -64,6 +65,9 @@ FakeHandler server({
           : jsonBody(200, {'ride': rideJson(departureTime: departure)}),
     '/bookings/mine' => jsonBody(200, {
       'bookings': myBookings?.call() ?? const [],
+    }),
+    '/rides/a1b2/bookings' => jsonBody(200, {
+      'bookings': requests?.call() ?? const [],
     }),
     _ => apiErrorBody(404, 'NOT_FOUND'),
   };
@@ -356,6 +360,228 @@ void main() {
     expect(find.text('Request seat'), findsNothing);
     expect(find.text('Cancel ride'), findsOneWidget);
     expect(gets('/bookings/mine'), 0);
+    expect(
+      find.text('No seat requests yet. Pull down to check for new ones.'),
+      findsOneWidget,
+    );
+  });
+
+  group('driver requests', () {
+    Map<String, dynamic> request(String id, String status, String name) =>
+        bookingJson(id: id, status: status, withRider: true, riderName: name);
+
+    FilledButton accept(WidgetTester tester) => tester.widget<FilledButton>(
+      find.ancestor(
+        of: find.text('Accept'),
+        matching: find.byWidgetPredicate((w) => w is FilledButton),
+      ),
+    );
+
+    testWidgets('lists requests with Accept and Reject on pending ones only', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pump(
+        tester,
+        userId: 'd1',
+        handler: server(
+          requests: () => [
+            request('b1', 'PENDING', 'Ravi'),
+            request('b2', 'ACCEPTED', 'Meera'),
+            request('b3', 'REJECTED', 'Kabir'),
+          ],
+        ),
+      );
+      await settle(tester);
+
+      expect(find.text('Ravi · 1 seat'), findsOneWidget);
+      expect(find.text('Meera · 1 seat'), findsOneWidget);
+      expect(find.text('Pending'), findsOneWidget);
+      expect(find.text('Accepted'), findsOneWidget);
+      expect(find.text('Rejected'), findsOneWidget);
+      expect(find.text('Accept'), findsOneWidget);
+      expect(find.text('Reject'), findsOneWidget);
+      expect(find.text('Dwarka Sector 3'), findsNWidgets(3));
+    });
+
+    testWidgets(
+      'Accept is disabled while in flight, then the ride and requests reload',
+      (tester) async {
+        var status = 'PENDING';
+        var seats = 3;
+        final response = Completer<ResponseBody>();
+        await pump(
+          tester,
+          userId: 'd1',
+          handler: server(
+            ride: () async => jsonBody(200, {
+              'ride': {
+                ...rideJson(departureTime: departure),
+                'seatsAvailable': seats,
+              },
+            }),
+            requests: () => [request('b1', status, 'Ravi')],
+            post: (_) => response.future,
+          ),
+        );
+        await settle(tester);
+        expect(find.text('3 of 3 seats available'), findsOneWidget);
+
+        await tapText(tester, 'Accept');
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(adapter.requests.last.path, '/bookings/b1/accept');
+        expect(accept(tester).onPressed, isNull);
+        expect(
+          tester
+              .widget<OutlinedButton>(
+                find.widgetWithText(OutlinedButton, 'Reject'),
+              )
+              .onPressed,
+          isNull,
+        );
+
+        status = 'ACCEPTED';
+        seats = 2;
+        response.complete(
+          jsonBody(200, {'booking': bookingJson(status: 'ACCEPTED')}),
+        );
+        await settle(tester);
+
+        expect(find.text('Request accepted.'), findsOneWidget);
+        expect(gets('/rides/a1b2'), 2);
+        expect(gets('/rides/a1b2/bookings'), 2);
+        expect(find.text('2 of 3 seats available'), findsOneWidget);
+        expect(find.text('Accepted'), findsOneWidget);
+        expect(find.text('Accept'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'SEAT_UNAVAILABLE explains why and reloads the ride and requests',
+      (tester) async {
+        var rideStatus = 'OPEN';
+        await pump(
+          tester,
+          userId: 'd1',
+          handler: server(
+            ride: () async => jsonBody(200, {
+              'ride': rideJson(status: rideStatus, departureTime: departure),
+            }),
+            requests: () => [request('b1', 'PENDING', 'Ravi')],
+            post: (_) async {
+              rideStatus = 'FULL';
+              return apiErrorBody(
+                409,
+                'SEAT_UNAVAILABLE',
+                'Cannot accept this booking: the ride is FULL',
+              );
+            },
+          ),
+        );
+        await settle(tester);
+
+        await tapText(tester, 'Accept');
+        await settle(tester);
+
+        expect(
+          find.text(
+            "Couldn't accept the request. This request can't be accepted: "
+            'not enough seats are left, or the ride has already left.',
+          ),
+          findsOneWidget,
+        );
+        expect(gets('/rides/a1b2'), 2);
+        expect(gets('/rides/a1b2/bookings'), 2);
+        expect(find.text('Full'), findsOneWidget);
+        // Still pending: it can be accepted if a seat frees up.
+        expect(accept(tester).onPressed, isNotNull);
+      },
+    );
+
+    testWidgets('Reject asks first; Keep request sends nothing', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        userId: 'd1',
+        handler: server(
+          requests: () => [request('b1', 'PENDING', 'Ravi')],
+          post: (_) async =>
+              jsonBody(200, {'booking': bookingJson(status: 'REJECTED')}),
+        ),
+      );
+      await settle(tester);
+
+      await tapText(tester, 'Reject');
+      await tester.pump();
+      expect(find.text('Reject this request?'), findsOneWidget);
+      expect(find.textContaining('Ravi asked for 1 seat.'), findsOneWidget);
+      await tester.tap(find.text('Keep request'));
+      await settle(tester);
+      expect(adapter.requests.where((r) => r.method == 'POST'), isEmpty);
+
+      await tapText(tester, 'Reject');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Reject'));
+      await settle(tester);
+      expect(
+        adapter.requests.singleWhere((r) => r.method == 'POST').path,
+        '/bookings/b1/reject',
+      );
+      expect(find.text('Request rejected.'), findsOneWidget);
+    });
+
+    testWidgets('pull to refresh reloads the ride and shows new requests', (
+      tester,
+    ) async {
+      final requests = <Map<String, dynamic>>[];
+      await pump(
+        tester,
+        userId: 'd1',
+        handler: server(requests: () => requests),
+      );
+      await settle(tester);
+      expect(find.textContaining('No seat requests yet.'), findsOneWidget);
+
+      requests.add(request('b1', 'PENDING', 'Ravi'));
+      unawaited(
+        tester
+            .state<RefreshIndicatorState>(find.byType(RefreshIndicator))
+            .show(),
+      );
+      await settle(tester);
+
+      expect(gets('/rides/a1b2'), 2);
+      expect(gets('/rides/a1b2/bookings'), 2);
+      expect(gets('/bookings/mine'), 0);
+      expect(find.text('Ravi · 1 seat'), findsOneWidget);
+    });
+
+    testWidgets('a failed load shows Retry and keeps the ride', (tester) async {
+      var fail = true;
+      final base = server(requests: () => [request('b1', 'PENDING', 'Ravi')]);
+      await pump(
+        tester,
+        userId: 'd1',
+        handler: (req) async => fail && req.path == '/rides/a1b2/bookings'
+            ? apiErrorBody(500, 'INTERNAL', 'Something broke')
+            : base(req),
+      );
+      await settle(tester);
+
+      expect(
+        find.text("Couldn't load the requests. Something broke"),
+        findsOneWidget,
+      );
+      expect(find.text('You are driving'), findsOneWidget);
+
+      fail = false;
+      await tapText(tester, 'Retry');
+      await settle(tester);
+      expect(find.text('Ravi · 1 seat'), findsOneWidget);
+    });
   });
 
   testWidgets('no Request seat on a ride that already departed', (
