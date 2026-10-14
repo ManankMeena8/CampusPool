@@ -71,6 +71,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.text('All (5)'));
+    await tester.pumpAndSettle();
 
     for (final label in [
       'Pending',
@@ -141,10 +143,79 @@ void main() {
 
       expect(find.text('Booking cancelled.'), findsOneWidget);
       expect(listLoads(), 2);
+      // It moved from Upcoming to Closed.
+      expect(find.text('No upcoming bookings'), findsOneWidget);
+      expect(find.text('Closed (1)'), findsOneWidget);
+      await tester.tap(find.text('Closed (1)'));
+      await tester.pumpAndSettle();
       expect(find.text('Cancelled'), findsOneWidget);
       expect(find.widgetWithText(TextButton, 'Cancel'), findsNothing);
     },
   );
+
+  testWidgets('starts on Upcoming with counts; switching chips changes the '
+      'list', (tester) async {
+    await pump(
+      tester,
+      server(
+        () => [
+          bookingJson(id: 'up', ride: listRideJson()),
+          bookingJson(
+            id: 'past',
+            status: 'ACCEPTED',
+            ride: listRideJson(fromNow: const Duration(hours: -1)),
+          ),
+          bookingJson(id: 'closed', status: 'REJECTED', ride: listRideJson()),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (final chip in ['All (3)', 'Upcoming (1)', 'Past (1)', 'Closed (1)']) {
+      expect(find.text(chip), findsOneWidget, reason: chip);
+    }
+    expect(find.text('Pending'), findsOneWidget);
+    expect(find.text('Accepted'), findsNothing);
+    expect(find.text('Rejected'), findsNothing);
+
+    await tester.tap(find.text('Past (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Accepted'), findsOneWidget);
+    expect(find.text('Pending'), findsNothing);
+
+    await tester.tap(find.text('Closed (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Rejected'), findsOneWidget);
+    expect(find.text('Accepted'), findsNothing);
+  });
+
+  testWidgets('pull to refresh from an empty filter keeps it and shows new '
+      'bookings', (tester) async {
+    final bookings = [bookingJson(ride: listRideJson())];
+    await pump(tester, server(() => bookings));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Closed (0)'));
+    await tester.pumpAndSettle();
+    expect(find.text('No closed bookings'), findsOneWidget);
+
+    bookings.add(
+      bookingJson(id: 'b2', status: 'REJECTED', ride: listRideJson()),
+    );
+    await tester.fling(
+      find.text('No closed bookings'),
+      const Offset(0, 400),
+      1000,
+    );
+    await tester.pumpAndSettle();
+
+    expect(listLoads(), 2);
+    final closed = tester.widget<ChoiceChip>(
+      find.widgetWithText(ChoiceChip, 'Closed (1)'),
+    );
+    expect(closed.selected, isTrue);
+    expect(find.text('Rejected'), findsOneWidget);
+    expect(find.text('Pending'), findsNothing);
+  });
 
   testWidgets('a 409 shows the reason and reloads the list', (tester) async {
     await pump(

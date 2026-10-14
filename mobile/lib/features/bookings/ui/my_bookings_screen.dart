@@ -8,9 +8,11 @@ import '../../../core/api/api_error.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/widgets/empty_view.dart';
 import '../../../core/widgets/error_view.dart';
+import '../../../core/widgets/filter_chip_bar.dart';
 import '../../../core/widgets/loading_view.dart';
 import '../../rides/ui/ride_format.dart';
 import '../../rides/ui/widgets/ride_stop.dart';
+import '../data/booking_filters.dart';
 import '../data/booking_models.dart';
 import '../providers/booking_providers.dart';
 import 'widgets/booking_status_chip.dart';
@@ -28,6 +30,9 @@ class _MyBookingsScreenState extends ConsumerState<MyBookingsScreen> {
   /// Rebuilds every minute so pending requests flip to Expired at departure.
   late final Timer _tick;
   final _cancelling = <String>{};
+
+  /// Kept while the screen is open, through refreshes.
+  BookingFilter _filter = BookingFilter.upcoming;
 
   @override
   void initState() {
@@ -95,20 +100,48 @@ class _MyBookingsScreenState extends ConsumerState<MyBookingsScreen> {
             );
           }
           final now = DateTime.now();
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: bookings.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (_, i) => _BookingCard(
-                booking: bookings[i],
-                now: now,
-                cancelling: _cancelling.contains(bookings[i].id),
-                onTap: () => _open(bookings[i]),
-                onCancel: () => _cancel(bookings[i]),
+          final counts = countBookings(bookings, now);
+          final shown = filterBookings(bookings, _filter, now);
+          return Column(
+            children: [
+              FilterChipBar<BookingFilter>(
+                options: BookingFilter.values,
+                selected: _filter,
+                label: (f) => '${f.label} (${counts[f]})',
+                onSelected: (f) => setState(() => _filter = f),
               ),
-            ),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: shown.isEmpty
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.only(top: 48),
+                          children: [
+                            EmptyView(
+                              icon: Icons.event_seat_outlined,
+                              message:
+                                  'No ${_filter.label.toLowerCase()} bookings',
+                            ),
+                          ],
+                        )
+                      : ListView.separated(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(16),
+                          itemCount: shown.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (_, i) => _BookingCard(
+                            booking: shown[i],
+                            now: now,
+                            cancelling: _cancelling.contains(shown[i].id),
+                            onTap: () => _open(shown[i]),
+                            onCancel: () => _cancel(shown[i]),
+                          ),
+                        ),
+                ),
+              ),
+            ],
           );
         },
       ),
