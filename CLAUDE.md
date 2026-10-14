@@ -53,6 +53,8 @@ Real-time ride-pooling app for verified college students and staff.
 - A refresh that times out, or returns 200 with a body the client can't parse, after the server already rotated the token makes the retry look like reuse, which logs the user out everywhere. Accepted for the MVP; possible fix is a short server-side grace window.
 - OPEN rides past their departure time still show as OPEN in /rides/mine (nothing moves them to COMPLETED); the app must show them as expired
 - Cancelling a ride cancels its bookings but notifies no one yet; neither do booking requests, accepts, rejects or cancels
+- After a booking is accepted, rider and driver have no way to contact each other (no phone number shown, no chat) until chat in Part B
+- A booking the rider cancelled shows as "Ride cancelled" (not "Cancelled") if the driver later cancels the ride: the app can't tell which came first. Fix needs the server to record who cancelled
 - /rides/mine, /bookings/mine and /rides/:id/bookings have no pagination
 - A booking's pickup and drop points are not checked against the ride's route or ends
 - /rides/search matches only a ride's start and end points (each within the radius); a rider joining or leaving along the route (routeLine) is not matched yet
