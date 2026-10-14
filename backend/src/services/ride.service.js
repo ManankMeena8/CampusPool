@@ -83,6 +83,16 @@ function findRidesByDriver(driverId) {
              r."departureTime" DESC`;
 }
 
+/** Rides by id, without route lines, in no particular order. */
+function findRidesByIds(ids) {
+  if (ids.length === 0) return [];
+  return prisma.$queryRaw`
+    SELECT ${RIDE_COLUMNS}
+    FROM "Ride" r
+    JOIN "User" u ON u."id" = r."driverId"
+    WHERE r."id" IN (${Prisma.join(ids)})`;
+}
+
 const geographyPoint = ({ lat, lng }) =>
   Prisma.sql`ST_SetSRID(ST_MakePoint(${lng}::float8, ${lat}::float8), 4326)::geography`;
 
@@ -197,6 +207,9 @@ module.exports = {
   createRide,
   getRide,
   findRidesByDriver,
+  findRidesByIds,
+  geographyPoint,
+  utc,
   OVERLAP_WINDOW_MS,
   SNAP_WARNING_METERS,
 };

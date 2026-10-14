@@ -56,4 +56,32 @@ function toRideSearchResult(row) {
   };
 }
 
-module.exports = { toPublicUser, toRide, toRideSearchResult };
+/**
+ * Shapes a row from booking.service for the API. Pickup and drop points become {lat, lng,
+ * address}. Rows listed for the driver carry the rider by name and rating only; rows listed for
+ * the rider carry their ride.
+ */
+function toBooking(row) {
+  const booking = {
+    id: row.id,
+    rideId: row.rideId,
+    status: row.status,
+    seats: row.seats,
+    pickup: { ...fromGeoJsonPoint(row.pickupPoint), address: row.pickupAddress },
+    drop: { ...fromGeoJsonPoint(row.dropPoint), address: row.dropAddress },
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+  if ('riderName' in row) {
+    booking.rider = {
+      id: row.riderId,
+      name: row.riderName,
+      ratingAvg: row.riderRatingAvg,
+      ratingCount: row.riderRatingCount,
+    };
+  }
+  if (row.ride) booking.ride = toRide(row.ride);
+  return booking;
+}
+
+module.exports = { toPublicUser, toRide, toRideSearchResult, toBooking };

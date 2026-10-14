@@ -93,6 +93,7 @@ const searchRidesQuery = z
   });
 
 module.exports = {
+  place,
   createRideBody,
   rideIdParams,
   searchRidesQuery,

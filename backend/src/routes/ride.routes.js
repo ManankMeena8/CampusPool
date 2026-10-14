@@ -4,7 +4,9 @@ const validate = require('../middleware/validate');
 const requireAuth = require('../middleware/requireAuth');
 const requireRole = require('../middleware/requireRole');
 const controller = require('../controllers/ride.controller');
+const bookingController = require('../controllers/booking.controller');
 const v = require('../validators/ride.validators');
+const bv = require('../validators/booking.validators');
 
 const router = Router();
 router.post(
@@ -35,6 +37,19 @@ router.post(
   requireAuth,
   validate({ params: v.rideIdParams }),
   asyncHandler(controller.cancelRide),
+);
+// No role check: anyone but the ride's driver can request a seat, including drivers.
+router.post(
+  '/:id/bookings',
+  requireAuth,
+  validate({ params: v.rideIdParams, body: bv.createBookingBody }),
+  asyncHandler(bookingController.requestBooking),
+);
+router.get(
+  '/:id/bookings',
+  requireAuth,
+  validate({ params: v.rideIdParams }),
+  asyncHandler(bookingController.listRideBookings),
 );
 
 module.exports = router;
