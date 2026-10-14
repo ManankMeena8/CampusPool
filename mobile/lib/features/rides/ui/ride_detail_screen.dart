@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/api/api_error.dart';
+import '../../../core/router/routes.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/loading_view.dart';
 import '../../auth/providers/auth_notifier.dart';
+import '../../bookings/data/booking_models.dart';
 import '../../bookings/providers/booking_providers.dart';
 import '../../bookings/ui/widgets/driver_requests_panel.dart';
 import '../../bookings/ui/widgets/rider_booking_panel.dart';
@@ -16,6 +19,7 @@ import '../providers/ride_providers.dart';
 import 'ride_format.dart';
 import 'widgets/cancel_ride.dart';
 import 'widgets/ride_status_chip.dart';
+import 'widgets/start_ride.dart';
 
 /// Extra data for the detail route. Right after posting, the ride is already in hand (no refetch)
 /// and the server's warnings are shown.
@@ -56,6 +60,7 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
   /// A ride we already have (just posted, or just cancelled); otherwise it is fetched.
   late Ride? _ride = widget.args.ride;
   bool _cancelling = false;
+  bool _starting = false;
 
   bool _drives(Ride ride) {
     final auth = ref.read(authProvider);
@@ -103,6 +108,36 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
       case CancelDismissed():
         break;
     }
+  }
+
+  Future<void> _start(Ride ride) async {
+    setState(() => _starting = true);
+    final started = await confirmAndStartRide(context, ref, ride);
+    if (!mounted) return;
+    setState(() => _starting = false);
+    if (started == null) return;
+    setState(() => _ride = started);
+    ref.invalidate(myRidesProvider);
+    await _openLive();
+  }
+
+  /// The ride may have changed while live (completed, cancelled): reload it on the way back.
+  Future<void> _openLive() async {
+    await context.push(Routes.liveRideFor(widget.id));
+    if (mounted) await _refresh();
+  }
+
+  /// The driver, once the ride is under way. A rider with an accepted seat, also from 30 minutes
+  /// before departure, to see when it starts.
+  bool _canFollow(Ride ride, DateTime now, bool isDriver) {
+    if (isDriver) return ride.status == RideStatus.inProgress;
+    if (ride.status != RideStatus.inProgress && !ride.canStart(now)) {
+      return false;
+    }
+    final bookings = ref.watch(myBookingsProvider).value ?? const <Booking>[];
+    return bookings.any(
+      (b) => b.rideId == ride.id && b.status == BookingStatus.accepted,
+    );
   }
 
   @override
@@ -169,7 +204,7 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
                         style: textTheme.titleLarge,
                       ),
                     ),
-                    RideStatusChip(ride.displayStatus(now)),
+                    RideStatusChip(_shownStatus(ride, now, isDriver)),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -220,6 +255,20 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
                   ),
                 if (ride.notes != null)
                   _InfoRow(icon: Icons.notes, text: ride.notes!),
+                if (isDriver && ride.canStart(now))
+                  _LiveAction(
+                    icon: Icons.play_arrow,
+                    label: _starting ? 'Starting...' : 'Start ride',
+                    onPressed: _starting || routePending
+                        ? null
+                        : () => _start(ride),
+                  ),
+                if (_canFollow(ride, now, isDriver))
+                  _LiveAction(
+                    icon: Icons.near_me,
+                    label: isDriver ? 'Open live tracking' : 'Track ride',
+                    onPressed: _openLive,
+                  ),
                 if (!isDriver)
                   RiderBookingPanel(
                     ride: ride,
@@ -250,6 +299,45 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
       ),
     );
   }
+}
+
+/// A departed OPEN or FULL ride shows as expired, but its driver can still start it for 30
+/// minutes: they see its real status instead.
+RideDisplayStatus _shownStatus(Ride ride, DateTime now, bool isDriver) {
+  final shown = ride.displayStatus(now);
+  if (shown == RideDisplayStatus.expired && isDriver && ride.canStart(now)) {
+    return ride.status == RideStatus.full
+        ? RideDisplayStatus.full
+        : RideDisplayStatus.open;
+  }
+  return shown;
+}
+
+/// A full-width button for starting or following the ride.
+class _LiveAction extends StatelessWidget {
+  const _LiveAction({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 16),
+    child: SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon),
+        label: Text(label),
+      ),
+    ),
+  );
 }
 
 /// The route as a polyline with start and end markers. Without a route (routing failed, or
