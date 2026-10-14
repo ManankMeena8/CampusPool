@@ -6,8 +6,11 @@ import '../../../core/api/api_error.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/loading_view.dart';
 import '../../auth/providers/auth_notifier.dart';
+import '../../bookings/providers/booking_providers.dart';
+import '../../bookings/ui/widgets/rider_booking_panel.dart';
 import '../../places/ui/osm_map_layers.dart';
 import '../data/ride_models.dart';
+import '../data/ride_search.dart';
 import '../providers/ride_providers.dart';
 import 'ride_format.dart';
 import 'widgets/cancel_ride.dart';
@@ -20,6 +23,7 @@ class RideDetailArgs {
     this.ride,
     this.warnings = const [],
     this.searchResult,
+    this.criteria,
   });
 
   final Ride? ride;
@@ -28,6 +32,9 @@ class RideDetailArgs {
   /// Set when opened from search results: shown while the full ride (with its route) loads, and
   /// its distances from the rider's points are shown.
   final RideSearchResult? searchResult;
+
+  /// The search the ride was found with: its pickup, drop-off and seats go into a seat request.
+  final RideSearchCriteria? criteria;
 }
 
 class RideDetailScreen extends ConsumerStatefulWidget {
@@ -49,13 +56,31 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
   late Ride? _ride = widget.args.ride;
   bool _cancelling = false;
 
+  bool _drives(Ride ride) {
+    final auth = ref.read(authProvider);
+    return auth is AuthAuthenticated && auth.user.id == ride.driver.id;
+  }
+
+  /// Reloads the ride and, for the rider, their bookings. There are no notifications yet, so
+  /// this (pull to refresh) is how changes made elsewhere show up.
   Future<void> _refresh() async {
+    final shown =
+        _ride ??
+        ref.read(rideProvider(widget.id)).value ??
+        widget.args.searchResult?.ride;
     setState(() => _ride = null);
     ref.invalidate(rideProvider(widget.id));
-    try {
-      await ref.read(rideProvider(widget.id).future);
-    } catch (_) {
-      // Shown by the error state.
+    final reloads = <Future<Object?>>[ref.read(rideProvider(widget.id).future)];
+    if (shown != null && !_drives(shown)) {
+      ref.invalidate(myBookingsProvider);
+      reloads.add(ref.read(myBookingsProvider.future));
+    }
+    for (final reload in reloads) {
+      try {
+        await reload;
+      } catch (_) {
+        // Shown by the error states.
+      }
     }
   }
 
@@ -190,27 +215,12 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
                   ),
                 if (ride.notes != null)
                   _InfoRow(icon: Icons.notes, text: ride.notes!),
-                if (!isDriver &&
-                    ride.displayStatus(now) == RideDisplayStatus.open) ...[
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    // Enabled in Phase 5, with bookings.
-                    child: FilledButton.icon(
-                      onPressed: null,
-                      icon: const Icon(Icons.event_seat),
-                      label: const Text('Request seat'),
-                    ),
+                if (!isDriver)
+                  RiderBookingPanel(
+                    ride: ride,
+                    criteria: widget.args.criteria,
+                    onChanged: _refresh,
                   ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Text(
-                      'Seat requests are coming soon.',
-                      style: textTheme.bodySmall,
-                    ),
-                  ),
-                ],
                 if (isDriver && ride.canCancel(now)) ...[
                   const SizedBox(height: 24),
                   SizedBox(

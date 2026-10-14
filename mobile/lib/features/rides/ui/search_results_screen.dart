@@ -53,7 +53,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
 
   void _open(RideSearchResult result) => context.push(
     Routes.rideDetailFor(result.ride.id),
-    extra: RideDetailArgs(searchResult: result),
+    extra: RideDetailArgs(searchResult: result, criteria: widget.criteria),
   );
 
   @override
