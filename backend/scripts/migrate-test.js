@@ -1,4 +1,4 @@
-require('../tests/setup'); // hermetic auth/mail defaults so env validation passes
+require('../tests/setup'); // loads .env.test, refuses non-test databases, sets hermetic defaults
 // Applies migrations to TEST_DATABASE_URL (env.js swaps it in as DATABASE_URL under NODE_ENV=test).
 const { spawnSync } = require('child_process');
 const { env } = require('../src/config/env');
