@@ -80,12 +80,27 @@ describe('connection', () => {
     await expect(rt.connect(token)).rejects.toMatchObject({ data: { code: 'INVALID_TOKEN' } });
   });
 
-  it('answers TOKEN_EXPIRED and disconnects once the token expires mid-connection', async () => {
-    const { driver, rideId } = await rideUnderWay();
+  it('disconnects a socket that sends nothing once its token expires', async () => {
+    const { rider, rideId } = await rideUnderWay();
     const exp = Math.floor(Date.now() / 1000) + 2;
+    const socket = await joined(tokenExpiringAt(rider.user, exp), rideId);
+
+    expect(await nextEvent(socket, 'disconnect', 4000)).toBe('io server disconnect');
+    expect(Date.now()).toBeGreaterThanOrEqual(exp * 1000);
+    expect(await roomMembers(rideId)).not.toContain(rider.user.id);
+  });
+
+  it('answers TOKEN_EXPIRED and disconnects on an event sent after the token expired', async () => {
+    const { driver, rideId } = await rideUnderWay();
+    const exp = Math.floor(Date.now() / 1000) + 10;
     const socket = await rt.connect(tokenExpiringAt(driver.user, exp));
     expect(await ask(socket, 'ride:join', { rideId })).toMatchObject({ ok: true });
-    await settle(exp * 1000 - Date.now() + 50);
+    // An event can arrive after the expiry but before the scheduled disconnect runs. Move the
+    // clock past the expiry instead of waiting: 10 s stays inside engine.io-client's ping
+    // deadline, which also reads Date.now().
+    const realNow = Date.now;
+    const offset = exp * 1000 - realNow();
+    jest.spyOn(Date, 'now').mockImplementation(() => realNow() + offset);
     const disconnected = nextEvent(socket, 'disconnect');
 
     const ack = await ask(socket, 'ride:join', { rideId });

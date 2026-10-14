@@ -45,6 +45,7 @@ async function authenticateSocket(socket, next) {
   return next();
 }
 
-const tokenExpired = (socket) => Date.now() >= socket.data.tokenExp * 1000;
+const msUntilTokenExpires = (socket) => socket.data.tokenExp * 1000 - Date.now();
+const tokenExpired = (socket) => msUntilTokenExpires(socket) <= 0;
 
-module.exports = { authenticateSocket, tokenExpired };
+module.exports = { authenticateSocket, msUntilTokenExpires, tokenExpired };
