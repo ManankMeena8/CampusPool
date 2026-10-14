@@ -2,6 +2,7 @@ const { randomUUID } = require('crypto');
 const { Prisma } = require('@prisma/client');
 const prisma = require('../lib/prisma');
 const AppError = require('../lib/AppError');
+const { BOOKING_ACTIONS } = require('../lib/bookingTransitions');
 const routing = require('./routing.service');
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -173,14 +174,25 @@ async function createRide(driverId, input) {
 }
 
 /**
- * Cancels the ride if `driverId` drives it and it is OPEN or FULL. The check and the update are
- * one conditional UPDATE, so a concurrent status change cannot slip in between; the ride is only
- * re-read to pick the right error.
+ * Cancels the ride if `driverId` drives it and it is OPEN or FULL, and with it every PENDING or
+ * ACCEPTED booking, in one transaction. The check and the update are one conditional UPDATE, so
+ * a concurrent status change cannot slip in between; the ride is only re-read to pick the right
+ * error. The ride is updated (locked) before its bookings: the lock order in booking.service.
  */
 async function cancelRide(driverId, id) {
-  const { count } = await prisma.ride.updateMany({
-    where: { id, driverId, status: { in: CANCELLABLE_STATUSES } },
-    data: { status: 'CANCELLED' },
+  const { from, to } = BOOKING_ACTIONS.rideCancelled;
+  const count = await prisma.$transaction(async (tx) => {
+    const { count: cancelled } = await tx.ride.updateMany({
+      where: { id, driverId, status: { in: CANCELLABLE_STATUSES } },
+      data: { status: 'CANCELLED' },
+    });
+    if (cancelled > 0) {
+      await tx.booking.updateMany({
+        where: { rideId: id, status: { in: from } },
+        data: { status: to },
+      });
+    }
+    return cancelled;
   });
   if (count === 0) {
     const ride = await prisma.ride.findUnique({

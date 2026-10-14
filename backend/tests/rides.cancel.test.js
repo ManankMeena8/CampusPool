@@ -5,6 +5,7 @@ const request = require('supertest');
 const routing = require('../src/services/routing.service');
 const { app, prisma, resetDb } = require('./helpers/auth');
 const { MINUTE, bearer, fakeRoute, createUser, rideBody, postRide } = require('./helpers/rides');
+const { insertBooking, bookingStatus } = require('./helpers/bookings');
 
 beforeEach(async () => {
   await resetDb();
@@ -40,6 +41,37 @@ describe('POST /rides/:id/cancel', () => {
     await prisma.ride.update({ where: { id }, data: { status: 'FULL', seatsAvailable: 0 } });
     await cancel(driver.token, id).expect(200);
     expect(await statusOf(id)).toBe('CANCELLED');
+  });
+
+  it('cancels PENDING and ACCEPTED bookings and leaves REJECTED and CANCELLED ones alone', async () => {
+    const { driver, id } = await postedRide();
+    const riders = await Promise.all(['r1', 'r2', 'r3', 'r4'].map((l) => createUser(l, 'RIDER')));
+    const bookings = {};
+    for (const [i, status] of ['PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED'].entries()) {
+      bookings[status] = await insertBooking(id, riders[i].user.id, { status });
+    }
+    const other = await createUser('other-dev');
+    const otherRide = (await postRide(other.token).expect(201)).body.ride.id;
+    const untouched = await insertBooking(otherRide, riders[0].user.id);
+
+    await cancel(driver.token, id).expect(200);
+
+    expect(await bookingStatus(bookings.PENDING)).toBe('CANCELLED');
+    expect(await bookingStatus(bookings.ACCEPTED)).toBe('CANCELLED');
+    expect(await bookingStatus(bookings.REJECTED)).toBe('REJECTED');
+    expect(await bookingStatus(bookings.CANCELLED)).toBe('CANCELLED');
+    expect(await bookingStatus(untouched)).toBe('PENDING');
+  });
+
+  it('does not touch bookings when the cancel is refused', async () => {
+    const { id } = await postedRide();
+    const intruder = await createUser('intruder');
+    const rider = await createUser('rider', 'RIDER');
+    const booking = await insertBooking(id, rider.user.id, { status: 'ACCEPTED' });
+
+    await cancel(intruder.token, id).expect(403);
+
+    expect(await bookingStatus(booking)).toBe('ACCEPTED');
   });
 
   it('lets the driver cancel after switching their role to RIDER', async () => {
