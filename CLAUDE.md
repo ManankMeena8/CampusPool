@@ -49,6 +49,12 @@ Real-time ride-pooling app for verified college students and staff.
   - location:update {rideId, lat, lng, heading?, speed?}: driver only, IN_PROGRESS only, at most 1 per 2 s per driver (THROTTLED); broadcast as driver:location to the rest of the room
   - ride:status {rideId, status} on start, complete and ride cancel. Emits and location/throttle cleanup happen in src/realtime/hub.js, called only after the transaction commits, and never fail the request
   - The location store sits behind async get/set/delete (src/realtime/locationStore.js) so Redis can replace it
+- Session refresh (mobile): SessionRefresher (lib/core/api) is the only caller of /auth/refresh. The dio AuthInterceptor and the socket share its single-flight call; freshAccessToken() refreshes when the JWT exp is under 60 s away (or forced)
+- Live tracking (mobile, lib/features/tracking):
+  - RideTrackingConnection turns socket_io_client's reconnection off (it would resend the token the socket was created with). Every attempt is a new socket with a fresh token, backoff 1 s doubling to 30 s, then a re-join whose ack replaces the shown state. A handshake TOKEN_EXPIRED/INVALID_TOKEN or a server-side disconnect forces a refresh; FORBIDDEN and RIDE_NOT_FOUND are final
+  - Driver: geolocator stream (high accuracy, 20 m distance filter) in an Android foreground service with an ongoing notification, started from the foreground, so no ACCESS_BACKGROUND_LOCATION. LocationEmitter sends at most one fix per 2.2 s (latest wins) and resends the last fix after 10 s without one, so a stopped car does not look lost
+  - The Live ride screen (/rides/:id/live) owns tracking: closing it, or the ride ending, stops the tracker and disconnects. The driver leaving while IN_PROGRESS is asked first. Start ride checks location permission and GPS before calling /start
+  - Riders: the marker glides between updates; "Last updated" uses the phone's receive time (the server's recordedAt, never in the future, for the join ack); a warning shows after 30 s without an update
 
 ## Known gaps (decided, not forgotten)
 - Login rate limiting by IP + email: add in Phase 7.1 (trust proxy = 1 on Render, limiter disabled in tests)
@@ -69,3 +75,7 @@ Real-time ride-pooling app for verified college students and staff.
 - A booking's pickup and drop points are not checked against the ride's route or ends
 - /rides/search matches only a ride's start and end points (each within the radius); a rider joining or leaving along the route (routeLine) is not matched yet
 - Routing uses the public OSRM demo server: rate-limited, no SLA, for light use only. Move to a self-hosted OSRM (set ROUTING_BASE_URL) before real traffic
+- Tracking stops if the driver swipes the app away or Android kills the process; it resumes only when they reopen the Live ride screen
+- The Android 13+ notification permission is not requested yet: until Phase 7 asks for it (with firebase_messaging), the tracking notification may be hidden. Tracking still runs
+- A rider whose booking is cancelled during the ride is removed from the room without an event: their screen just stops getting updates (and shows the 30 s warning) until a reconnect, whose join is refused
+- The 10 s heartbeat resends the last fix, so "Last updated" shows that the driver's app is alive, not that the car moved
