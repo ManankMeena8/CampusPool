@@ -111,8 +111,11 @@ class Ride {
   /// Null in list responses and when routing failed.
   final List<LatLng>? route;
 
+  /// Departed at or before [now]; the server refuses new requests from that moment too.
+  bool hasDeparted(DateTime now) => !departureTime.isAfter(now);
+
   RideDisplayStatus displayStatus(DateTime now) {
-    final departed = !departureTime.isAfter(now);
+    final departed = hasDeparted(now);
     switch (status) {
       case RideStatus.open:
         return departed ? RideDisplayStatus.expired : RideDisplayStatus.open;

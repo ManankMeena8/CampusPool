@@ -55,7 +55,7 @@ Real-time ride-pooling app for verified college students and staff.
 - Cancelling a ride cancels its bookings but notifies no one yet; neither do booking requests, accepts, rejects or cancels
 - After a booking is accepted, rider and driver have no way to contact each other (no phone number shown, no chat) until chat in Part B
 - A booking the rider cancelled shows as "Ride cancelled" (not "Cancelled") if the driver later cancels the ride: the app can't tell which came first. Fix needs the server to record who cancelled
-- /rides/mine, /bookings/mine and /rides/:id/bookings have no pagination
+- /rides/mine, /bookings/mine and /rides/:id/bookings have no pagination; the My Rides / My Bookings filters are client-side and must move to the server if pagination is added
 - A booking's pickup and drop points are not checked against the ride's route or ends
 - /rides/search matches only a ride's start and end points (each within the radius); a rider joining or leaving along the route (routeLine) is not matched yet
 - Routing uses the public OSRM demo server: rate-limited, no SLA, for light use only. Move to a self-hosted OSRM (set ROUTING_BASE_URL) before real traffic
