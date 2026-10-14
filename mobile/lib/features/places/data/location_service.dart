@@ -37,23 +37,8 @@ class LocationService {
 
   Future<LocationResult> current() async {
     try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        return const LocationServicesOff();
-      }
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      switch (permission) {
-        case LocationPermission.denied:
-          return const LocationDenied();
-        case LocationPermission.deniedForever:
-          return const LocationDeniedForever();
-        case LocationPermission.whileInUse:
-        case LocationPermission.always:
-        case LocationPermission.unableToDetermine:
-          break;
-      }
+      final problem = await ensurePermission();
+      if (problem != null) return problem;
       try {
         final pos = await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(
@@ -69,6 +54,29 @@ class LocationService {
             ? const LocationUnavailable()
             : LocationFound(LatLng(last.latitude, last.longitude));
       }
+    } catch (_) {
+      return const LocationUnavailable();
+    }
+  }
+
+  /// Checks that location is on and permitted, asking for permission if needed. Null when
+  /// locations can be read; otherwise the problem. Never throws.
+  Future<LocationResult?> ensurePermission() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        return const LocationServicesOff();
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      return switch (permission) {
+        LocationPermission.denied => const LocationDenied(),
+        LocationPermission.deniedForever => const LocationDeniedForever(),
+        LocationPermission.whileInUse ||
+        LocationPermission.always ||
+        LocationPermission.unableToDetermine => null,
+      };
     } catch (_) {
       return const LocationUnavailable();
     }
