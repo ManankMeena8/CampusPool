@@ -38,6 +38,40 @@ describe('loadEnv', () => {
     expect(errSpy.mock.calls[0][0]).toMatch(/JWT_ACCESS_SECRET/);
   });
 
+  describe('CORS_ORIGIN', () => {
+    const load = (overrides) => {
+      const exit = jest.fn();
+      const env = loadEnv({ ...valid, ...overrides }, exit);
+      return { env, exit, message: errSpy.mock.calls[0]?.[0] };
+    };
+
+    it('defaults to * outside production, also when empty', () => {
+      expect(load({ NODE_ENV: 'development' }).env.CORS_ORIGIN).toBe('*');
+      expect(load({ NODE_ENV: 'development', CORS_ORIGIN: ' ' }).env.CORS_ORIGIN).toBe('*');
+    });
+
+    it.each([
+      ['unset', undefined, /CORS_ORIGIN: is required when NODE_ENV=production/],
+      ['empty', '', /CORS_ORIGIN: is required/],
+      ['*', '*', /\* is not allowed in production/],
+      ['* in a list', 'https://a.example, *', /\* is not allowed in production/],
+      ['a trailing slash', 'https://a.example/', /is not an origin/],
+      ['a path', 'https://a.example/app', /is not an origin/],
+      ['no scheme', 'a.example', /is not an origin/],
+    ])('refuses %s in production', (_label, value, pattern) => {
+      const { exit, message } = load({ NODE_ENV: 'production', CORS_ORIGIN: value });
+      expect(exit).toHaveBeenCalledWith(1);
+      expect(message).toMatch(pattern);
+    });
+
+    it('accepts a list of exact origins in production', () => {
+      const value = 'https://campuspool.example, http://localhost:5173';
+      const { env, exit } = load({ NODE_ENV: 'production', CORS_ORIGIN: value });
+      expect(exit).not.toHaveBeenCalled();
+      expect(env.CORS_ORIGIN).toBe(value);
+    });
+  });
+
   it('normalizes the allowed email domain', () => {
     const exit = jest.fn();
     const env = loadEnv({ ...valid, NODE_ENV: 'development' }, exit);

@@ -1,4 +1,4 @@
-const { env } = require('./env');
+const { env, splitOrigins } = require('./env');
 
 /** CORS_ORIGIN as cors and Socket.io expect it: '*' or a list of origins. */
-module.exports = env.CORS_ORIGIN === '*' ? '*' : env.CORS_ORIGIN.split(',').map((o) => o.trim());
+module.exports = env.CORS_ORIGIN === '*' ? '*' : splitOrigins(env.CORS_ORIGIN);
