@@ -9,6 +9,11 @@ const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 
+// Render puts one proxy in front of the API: take the client IP (for the rate limits) from the
+// entry it adds to X-Forwarded-For. Without a proxy, trusting that header would let any client
+// choose its own IP, so it is trusted only in production.
+if (env.NODE_ENV === 'production') app.set('trust proxy', 1);
+
 app.use(helmet());
 app.use(cors({ origin: corsOrigin }));
 app.use(express.json({ limit: '100kb' }));
