@@ -238,7 +238,6 @@ class _FindRideScreenState extends ConsumerState<FindRideScreen> {
             decoration: InputDecoration(
               labelText: 'Seats needed',
               prefixIcon: const Icon(Icons.event_seat_outlined),
-              border: const OutlineInputBorder(),
               errorText: errors[SearchField.seats],
             ),
             child: Row(

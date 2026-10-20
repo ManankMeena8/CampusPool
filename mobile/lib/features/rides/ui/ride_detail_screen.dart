@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/api/api_error.dart';
 import '../../../core/router/routes.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/loading_view.dart';
 import '../../auth/providers/auth_notifier.dart';
@@ -210,14 +211,14 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
                 const SizedBox(height: 16),
                 _PlaceRow(
                   icon: Icons.trip_origin,
-                  color: Colors.green.shade700,
+                  color: RideColors.of(context).start,
                   label: 'From',
                   address: ride.start.address,
                 ),
                 const SizedBox(height: 12),
                 _PlaceRow(
                   icon: Icons.flag,
-                  color: Colors.red.shade700,
+                  color: RideColors.of(context).end,
                   label: 'To',
                   address: ride.end.address,
                 ),
@@ -404,11 +405,11 @@ class _RideRouteMapState extends State<RideRouteMap> {
               markers: [
                 pinMarker(
                   ride.start.point,
-                  MapPin(color: Colors.green.shade700),
+                  MapPin(color: RideColors.light.start),
                 ),
                 pinMarker(
                   ride.end.point,
-                  MapPin(color: Colors.red.shade700, icon: Icons.flag),
+                  MapPin(color: RideColors.light.end, icon: Icons.flag),
                 ),
               ],
             ),

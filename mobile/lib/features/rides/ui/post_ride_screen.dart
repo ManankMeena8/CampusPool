@@ -255,7 +255,6 @@ class _PostRideScreenState extends ConsumerState<PostRideScreen> {
           decoration: InputDecoration(
             labelText: 'Seats offered',
             prefixIcon: const Icon(Icons.event_seat_outlined),
-            border: const OutlineInputBorder(),
             errorText: err(RideField.seats),
           ),
           child: Row(
@@ -305,7 +304,6 @@ class _PostRideScreenState extends ConsumerState<PostRideScreen> {
             prefixIcon: const Icon(Icons.currency_rupee),
             helperText:
                 'Whole rupees, up to ₹${RideFormValidator.maxPrice}. Leave empty for free.',
-            border: const OutlineInputBorder(),
             errorText: err(RideField.price),
           ),
         ),
@@ -322,7 +320,6 @@ class _PostRideScreenState extends ConsumerState<PostRideScreen> {
             labelText: 'Notes (optional)',
             hintText: 'Pickup details, luggage space, AC...',
             alignLabelWithHint: true,
-            border: const OutlineInputBorder(),
             errorText: err(RideField.notes),
           ),
         ),

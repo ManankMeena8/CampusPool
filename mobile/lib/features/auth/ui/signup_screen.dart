@@ -82,10 +82,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 textInputAction: TextInputAction.next,
                 validator: Validators.name,
                 autovalidateMode: AutovalidateMode.onUserInteraction,
-                decoration: const InputDecoration(
-                  labelText: 'Full name',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(labelText: 'Full name'),
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -100,7 +97,6 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 decoration: InputDecoration(
                   labelText: 'College email',
                   hintText: 'you@$domain',
-                  border: const OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 16),

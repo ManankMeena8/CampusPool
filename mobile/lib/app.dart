@@ -12,6 +12,7 @@ class CampusPoolApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'CampusPool',
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
       routerConfig: ref.watch(routerProvider),
     );
   }

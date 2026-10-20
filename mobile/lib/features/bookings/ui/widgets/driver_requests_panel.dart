@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/api/api_error.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/inline_error.dart';
 import '../../../rides/data/ride_models.dart';
 import '../../../rides/ui/ride_format.dart';
@@ -187,13 +188,13 @@ class _RequestCard extends StatelessWidget {
             const SizedBox(height: 8),
             RideStop(
               icon: Icons.trip_origin,
-              color: Colors.green.shade700,
+              color: RideColors.of(context).start,
               text: booking.pickup.address,
             ),
             const SizedBox(height: 4),
             RideStop(
               icon: Icons.flag,
-              color: Colors.red.shade700,
+              color: RideColors.of(context).end,
               text: booking.drop.address,
             ),
             if (status == BookingDisplayStatus.pending) ...[

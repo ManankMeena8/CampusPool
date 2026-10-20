@@ -26,7 +26,7 @@ class PickerField extends StatelessWidget {
     final theme = Theme.of(context);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: BorderRadius.circular(12),
       child: InputDecorator(
         isEmpty: false,
         decoration: InputDecoration(
@@ -36,7 +36,6 @@ class PickerField extends StatelessWidget {
           helperText: helper,
           errorText: error,
           errorMaxLines: 2,
-          border: const OutlineInputBorder(),
           enabled: onTap != null,
         ),
         child: Text(

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/api/api_error.dart';
 import '../../../core/router/routes.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/empty_view.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/loading_view.dart';
@@ -219,7 +220,7 @@ class _SearchResultsMapState extends State<SearchResultsMap> {
               markers: [
                 pinMarker(
                   drop,
-                  MapPin(color: Colors.red.shade700, icon: Icons.flag),
+                  MapPin(color: RideColors.light.end, icon: Icons.flag),
                 ),
                 pinMarker(
                   pickup,

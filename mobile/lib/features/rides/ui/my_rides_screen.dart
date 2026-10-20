@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/api/api_error.dart';
 import '../../../core/router/routes.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/empty_view.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/filter_chip_bar.dart';
@@ -199,13 +200,13 @@ class _RideCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 RideStop(
                   icon: Icons.trip_origin,
-                  color: Colors.green.shade700,
+                  color: RideColors.of(context).start,
                   text: ride.start.address,
                 ),
                 const SizedBox(height: 4),
                 RideStop(
                   icon: Icons.flag,
-                  color: Colors.red.shade700,
+                  color: RideColors.of(context).end,
                   text: ride.end.address,
                 ),
                 Row(

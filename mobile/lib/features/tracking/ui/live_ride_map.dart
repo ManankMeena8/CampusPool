@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../core/theme/app_theme.dart';
 import '../../places/ui/osm_map_layers.dart';
 import '../../rides/data/ride_models.dart';
 import 'marker_motion.dart';
@@ -181,17 +182,17 @@ class _LiveRideMapState extends State<LiveRideMap>
               markers: [
                 pinMarker(
                   ride.start.point,
-                  MapPin(color: Colors.green.shade700),
+                  MapPin(color: RideColors.light.start),
                 ),
                 pinMarker(
                   ride.end.point,
-                  MapPin(color: Colors.red.shade700, icon: Icons.flag),
+                  MapPin(color: RideColors.light.end, icon: Icons.flag),
                 ),
                 if (widget.pickup != null)
                   pinMarker(
                     widget.pickup!,
                     MapPin(
-                      color: Colors.blue.shade700,
+                      color: RideColors.light.pickup,
                       icon: Icons.person_pin_circle,
                     ),
                   ),
