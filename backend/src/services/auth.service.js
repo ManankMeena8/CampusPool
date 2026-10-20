@@ -239,10 +239,21 @@ async function refresh({ refreshToken }) {
   return session;
 }
 
+/**
+ * Revokes the refresh token and clears the user's FCM token, so a logged-out phone stops
+ * receiving their notifications. Only a token revoked by this call clears it: replaying an old
+ * token must not silence the device the user is logged in on now.
+ */
 async function logout({ refreshToken }) {
-  await prisma.refreshToken.updateMany({
-    where: { tokenHash: sha256(refreshToken), revokedAt: null },
-    data: { revokedAt: new Date() },
+  await prisma.$transaction(async (tx) => {
+    const revoked = await tx.refreshToken.updateManyAndReturn({
+      where: { tokenHash: sha256(refreshToken), revokedAt: null },
+      data: { revokedAt: new Date() },
+      select: { userId: true },
+    });
+    if (revoked.length > 0) {
+      await tx.user.update({ where: { id: revoked[0].userId }, data: { fcmToken: null } });
+    }
   });
 }
 

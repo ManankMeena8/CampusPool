@@ -13,5 +13,11 @@ router.patch(
   validate({ body: v.updateMeBody }),
   asyncHandler(controller.updateMe),
 );
+router.put(
+  '/me/fcm-token',
+  requireAuth,
+  validate({ body: v.fcmTokenBody }),
+  asyncHandler(controller.setFcmToken),
+);
 
 module.exports = router;

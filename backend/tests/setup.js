@@ -15,6 +15,9 @@ process.env.SMTP_HOST = 'smtp.test.invalid';
 process.env.MAIL_FROM = 'CampusPool <no-reply@campus.test>';
 // Routing calls are always mocked; this host can never resolve.
 process.env.ROUTING_BASE_URL = 'https://osrm.test.invalid';
+// Push notifications are never sent from tests, whatever .env says (empty counts as unset, and
+// dotenv does not override a variable that is already set).
+process.env.FIREBASE_SERVICE_ACCOUNT_PATH = '';
 
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 const LOCAL_TEST_DB = '/campuspool_test';

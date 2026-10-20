@@ -89,6 +89,26 @@ describe('POST /auth/logout', () => {
     await refresh(session.refreshToken).expect(401);
   });
 
+  it("clears the user's FCM token, so the phone stops getting their notifications", async () => {
+    const session = await createVerifiedUser(email);
+    await prisma.user.update({ where: { id: session.user.id }, data: { fcmToken: 'device' } });
+    await logout(session.refreshToken).expect(204);
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+    expect(user.fcmToken).toBeNull();
+  });
+
+  it('leaves the FCM token alone when the refresh token was already revoked', async () => {
+    const session = await createVerifiedUser(email);
+    await logout(session.refreshToken).expect(204);
+    // Logged in again on a phone that then registered its token.
+    await prisma.user.update({ where: { id: session.user.id }, data: { fcmToken: 'device' } });
+    await logout(session.refreshToken).expect(204);
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+    expect(user.fcmToken).toBe('device');
+  });
+
   it('is idempotent and does not reveal whether a token existed', async () => {
     await logout('not-a-real-token').expect(204);
   });

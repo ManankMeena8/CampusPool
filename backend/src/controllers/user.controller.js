@@ -10,4 +10,9 @@ async function updateMe(req, res) {
   res.json({ user: toPublicUser(user) });
 }
 
-module.exports = { getMe, updateMe };
+async function setFcmToken(req, res) {
+  await userService.setFcmToken(req.user.id, req.body.token);
+  res.status(204).end();
+}
+
+module.exports = { getMe, updateMe, setFcmToken };

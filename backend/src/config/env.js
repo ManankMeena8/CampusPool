@@ -25,6 +25,13 @@ const schema = z
       .url()
       .default('https://router.project-osrm.org')
       .transform((v) => v.replace(/\/+$/, '')),
+    // Path to the Firebase service account JSON (kept outside the repo). Unset or empty: push
+    // notifications are not sent.
+    FIREBASE_SERVICE_ACCOUNT_PATH: z
+      .string()
+      .trim()
+      .optional()
+      .transform((v) => v || undefined),
   })
   .refine((v) => v.NODE_ENV !== 'test' || v.TEST_DATABASE_URL, {
     path: ['TEST_DATABASE_URL'],

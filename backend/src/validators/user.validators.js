@@ -13,4 +13,7 @@ const updateMeBody = z
   .partial()
   .refine((v) => Object.keys(v).length > 0, { message: 'at least one field is required' });
 
-module.exports = { updateMeBody };
+// FCM registration tokens are about 160 characters; the limit only guards against abuse.
+const fcmTokenBody = z.object({ token: z.string().trim().min(1).max(4096) });
+
+module.exports = { updateMeBody, fcmTokenBody };
