@@ -200,7 +200,7 @@ class _PostRideScreenState extends ConsumerState<PostRideScreen> {
     final isRider = auth is AuthAuthenticated && auth.user.role == Role.rider;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Post a ride')),
+      appBar: AppBar(title: const Text('Offer a ride')),
       body: isRider ? _riderOnly(context) : _form(context),
     );
   }

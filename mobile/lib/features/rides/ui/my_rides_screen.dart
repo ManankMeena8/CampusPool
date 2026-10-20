@@ -79,7 +79,7 @@ class _MyRidesScreenState extends ConsumerState<MyRidesScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push(Routes.postRide),
         icon: const Icon(Icons.add),
-        label: const Text('Post a ride'),
+        label: const Text('Offer a ride'),
       ),
       body: rides.when(
         // Keep showing the list while a refresh runs.
@@ -95,7 +95,7 @@ class _MyRidesScreenState extends ConsumerState<MyRidesScreen> {
               action: FilledButton.icon(
                 onPressed: () => context.push(Routes.postRide),
                 icon: const Icon(Icons.add),
-                label: const Text('Post a ride'),
+                label: const Text('Offer a ride'),
               ),
             );
           }

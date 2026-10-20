@@ -14,5 +14,6 @@ class HealthRepository {
   }
 }
 
-final healthRepositoryProvider =
-    Provider<HealthRepository>((ref) => HealthRepository(ref.watch(dioProvider)));
+final healthRepositoryProvider = Provider<HealthRepository>(
+  (ref) => HealthRepository(ref.watch(dioProvider)),
+);
