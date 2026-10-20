@@ -66,12 +66,12 @@ function createNotifications({ getMessaging, db }) {
    * Tokens FCM reports as invalid are cleared, unless the user registered a new one meanwhile.
    */
   async function send(type, userIds, build) {
+    if (userIds.length === 0) return;
     const fcm = client();
     if (!fcm) {
       log(`not configured; skipped ${type} for ${userIds.length} user(s)`);
       return;
     }
-    if (userIds.length === 0) return;
     const content = await build();
     if (!content) return;
     const users = await db.user.findMany({

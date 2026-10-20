@@ -5,6 +5,7 @@ const AppError = require('../lib/AppError');
 const { BOOKING_ACTIONS, assertTransition } = require('../lib/bookingTransitions');
 const { findRidesByIds, geographyPoint, utc } = require('./ride.service');
 const realtime = require('../realtime/hub');
+const notify = require('../lib/notify');
 
 /*
  * Lock order: every transaction that touches both a ride and its bookings locks the Ride row
@@ -45,7 +46,7 @@ async function lockRide(tx, rideId, mode = Prisma.sql`FOR UPDATE`) {
  */
 async function requestBooking(riderId, rideId, { pickup, drop, seats }) {
   const id = randomUUID();
-  await prisma.$transaction(async (tx) => {
+  const driverId = await prisma.$transaction(async (tx) => {
     const ride = await lockRide(tx, rideId, Prisma.sql`FOR SHARE`);
     if (!ride) throw new AppError('RIDE_NOT_FOUND', 'Ride not found', 404);
     if (ride.driverId === riderId) {
@@ -82,7 +83,9 @@ async function requestBooking(riderId, rideId, { pickup, drop, seats }) {
         409,
       );
     }
+    return ride.driverId;
   }, TX_OPTIONS);
+  notify('bookingRequested', { bookingId: id, driverId });
   return findBookingById(id);
 }
 
@@ -211,13 +214,15 @@ async function acceptBooking(driverId, id) {
     if (seated.length === 0) throw await seatUnavailable(tx, booking);
     await applyTransition(tx, 'accept', id);
   }, TX_OPTIONS);
+  notify('bookingAccepted', { bookingId: id, riderId: booking.riderId });
   return findBookingById(id);
 }
 
 /** Rejects a PENDING booking. No seats were taken, so the ride is not touched (or locked). */
 async function rejectBooking(driverId, id) {
-  await loadForDriver(driverId, id, 'reject');
+  const booking = await loadForDriver(driverId, id, 'reject');
   await applyTransition(prisma, 'reject', id);
+  notify('bookingRejected', { bookingId: id, riderId: booking.riderId });
   return findBookingById(id);
 }
 
@@ -258,6 +263,11 @@ async function cancelBooking(riderId, id) {
   }, TX_OPTIONS);
   // After the commit: an ACCEPTED rider stops following the ride (others never could).
   if (previous === 'ACCEPTED') await realtime.riderRemoved(booking.rideId, riderId);
+  notify('bookingCancelled', {
+    bookingId: id,
+    driverId: booking.ride.driverId,
+    wasAccepted: previous === 'ACCEPTED',
+  });
   return findBookingById(id);
 }
 

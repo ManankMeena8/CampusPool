@@ -5,6 +5,7 @@ const AppError = require('../lib/AppError');
 const { BOOKING_ACTIONS } = require('../lib/bookingTransitions');
 const routing = require('./routing.service');
 const realtime = require('../realtime/hub');
+const notify = require('../lib/notify');
 
 const HOUR_MS = 60 * 60 * 1000;
 const OVERLAP_WINDOW_MS = HOUR_MS;
@@ -185,18 +186,22 @@ async function createRide(driverId, input) {
  */
 async function cancelRide(driverId, id) {
   const { from, to } = BOOKING_ACTIONS.rideCancelled;
-  const count = await prisma.$transaction(async (tx) => {
+  const { count, riderIds } = await prisma.$transaction(async (tx) => {
     const { count: cancelled } = await tx.ride.updateMany({
       where: { id, driverId, status: { in: CANCELLABLE_STATUSES } },
       data: { status: 'CANCELLED' },
     });
-    if (cancelled > 0) {
-      await tx.booking.updateMany({
-        where: { rideId: id, status: { in: from } },
-        data: { status: to },
-      });
-    }
-    return cancelled;
+    if (cancelled === 0) return { count: 0, riderIds: [] };
+    // Read before the update, which leaves no trace of which bookings it ended.
+    const ended = await tx.booking.findMany({
+      where: { rideId: id, status: { in: from } },
+      select: { riderId: true },
+    });
+    await tx.booking.updateMany({
+      where: { rideId: id, status: { in: from } },
+      data: { status: to },
+    });
+    return { count: cancelled, riderIds: ended.map((b) => b.riderId) };
   });
   if (count === 0) {
     await refuseDriverAction(id, driverId, {
@@ -208,6 +213,7 @@ async function cancelRide(driverId, id) {
   }
   // Only after the commit: never announce a change that could still roll back.
   await realtime.rideStatusChanged({ id, driverId, status: 'CANCELLED' });
+  notify('rideCancelled', { rideId: id, riderIds });
   return findRideById(id);
 }
 
@@ -219,7 +225,7 @@ async function cancelRide(driverId, id) {
 async function startRide(driverId, id) {
   const now = Date.now();
   const { from, to } = BOOKING_ACTIONS.rideStarted;
-  const count = await prisma.$transaction(async (tx) => {
+  const { count, riders } = await prisma.$transaction(async (tx) => {
     const { count: started } = await tx.ride.updateMany({
       where: {
         id,
@@ -232,13 +238,17 @@ async function startRide(driverId, id) {
       },
       data: { status: 'IN_PROGRESS' },
     });
-    if (started > 0) {
-      await tx.booking.updateMany({
-        where: { rideId: id, status: { in: from } },
-        data: { status: to },
-      });
-    }
-    return started;
+    if (started === 0) return { count: 0, riders: [] };
+    // Read before the update: afterwards the requests it rejects look like any other REJECTED.
+    const active = await tx.booking.findMany({
+      where: { rideId: id, status: { in: [...from, 'ACCEPTED'] } },
+      select: { riderId: true, status: true },
+    });
+    await tx.booking.updateMany({
+      where: { rideId: id, status: { in: from } },
+      data: { status: to },
+    });
+    return { count: started, riders: active };
   });
   if (count === 0) {
     const ride = await refuseDriverAction(id, driverId, {
@@ -256,6 +266,9 @@ async function startRide(driverId, id) {
     );
   }
   await realtime.rideStatusChanged({ id, driverId, status: 'IN_PROGRESS' });
+  const riderIds = (keep) => riders.filter((b) => keep(b.status)).map((b) => b.riderId);
+  notify('rideStarted', { rideId: id, riderIds: riderIds((s) => s === 'ACCEPTED') });
+  notify('bookingAutoRejected', { rideId: id, riderIds: riderIds((s) => from.includes(s)) });
   return findRideById(id);
 }
 
