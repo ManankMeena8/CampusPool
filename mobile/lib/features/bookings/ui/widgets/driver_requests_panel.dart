@@ -199,23 +199,27 @@ class _RequestCard extends StatelessWidget {
             ),
             if (status == BookingDisplayStatus.pending) ...[
               const SizedBox(height: 12),
+              // Half the width each, so both fit on a narrow screen with large text.
               Row(
-                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  OutlinedButton(
-                    onPressed: busy ? null : onReject,
-                    child: const Text('Reject'),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: busy ? null : onReject,
+                      child: const Text('Reject'),
+                    ),
                   ),
                   const SizedBox(width: 12),
-                  FilledButton.icon(
-                    onPressed: busy ? null : onAccept,
-                    icon: busy
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.check),
-                    label: const Text('Accept'),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: busy ? null : onAccept,
+                      icon: busy
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.check),
+                      label: const Text('Accept'),
+                    ),
                   ),
                 ],
               ),
