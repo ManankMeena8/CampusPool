@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/api/api_call.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_error.dart';
 import '../../auth/data/auth_models.dart';
@@ -24,6 +25,12 @@ class UserRepository {
       throw ApiError.from(e);
     }
   }
+
+  /// Registers this device for push notifications. The server takes the token off any other
+  /// user who had it (a shared phone).
+  Future<void> setFcmToken(String token) => apiCall(
+    () => _dio.put<dynamic>('/users/me/fcm-token', data: {'token': token}),
+  );
 }
 
 final userRepositoryProvider = Provider<UserRepository>(

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../../core/api/api_error.dart';
 import '../../../core/widgets/form_message.dart';
 import '../../../core/widgets/loading_view.dart';
 import '../../auth/data/auth_models.dart';
 import '../../auth/providers/auth_notifier.dart';
+import '../../notifications/data/push_messaging.dart';
+import '../../notifications/providers/push_token_controller.dart';
 import '../data/user_repository.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -19,6 +22,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _savingRole = false;
   bool _loggingOut = false;
   String? _error;
+
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    // The user may turn notifications on in the system settings and come back.
+    _lifecycle = AppLifecycleListener(
+      onResume: () => ref.invalidate(pushPermissionProvider),
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
 
   Future<void> _changeRole(Role role) async {
     setState(() {
@@ -120,7 +140,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const SizedBox(height: 16),
             FormMessage(_error!),
           ],
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
+          const _NotificationsTile(),
+          const SizedBox(height: 24),
           OutlinedButton.icon(
             onPressed: busy ? null : _logout,
             icon: _loggingOut
@@ -134,5 +156,36 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ],
       ),
     );
+  }
+}
+
+/// Hidden when push is unavailable or the permission is unknown yet; the user can't act on it.
+class _NotificationsTile extends ConsumerWidget {
+  const _NotificationsTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final permission = ref.watch(pushPermissionProvider).value;
+    return switch (permission) {
+      PushPermission.granted => const ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(Icons.notifications_active_outlined),
+        title: Text('Notifications on'),
+        subtitle: Text('Booking and ride updates'),
+      ),
+      PushPermission.denied => ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.notifications_off_outlined),
+        title: const Text('Notifications off'),
+        subtitle: const Text(
+          "You won't hear about booking requests, answers or ride changes.",
+        ),
+        trailing: TextButton(
+          onPressed: Geolocator.openAppSettings,
+          child: const Text('Turn on'),
+        ),
+      ),
+      PushPermission.unavailable || null => const SizedBox.shrink(),
+    };
   }
 }
