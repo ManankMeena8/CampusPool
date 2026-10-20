@@ -4,3 +4,7 @@ node_modules/
 !.env.example
 !.env.test.example
 coverage/
+
+# Firebase service account keys: keep them outside the repo (FIREBASE_SERVICE_ACCOUNT_PATH)
+*firebase*.json
+*service-account*.json
