@@ -3,12 +3,14 @@ const app = require('./app');
 const { env } = require('./config/env');
 const prisma = require('./lib/prisma');
 const { attachRealtime } = require('./realtime');
+const notifications = require('./services/notification.service');
 
 const server = http.createServer(app);
 const io = attachRealtime(server);
 
 server.listen(env.PORT, () => {
   console.log(`CampusPool API listening on port ${env.PORT} (${env.NODE_ENV})`);
+  if (notifications.enabled()) console.log('[notifications] push notifications are enabled');
 });
 
 function shutdown(signal) {
