@@ -14,6 +14,13 @@ class CampusPoolApp extends ConsumerWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       routerConfig: ref.watch(routerProvider),
+      // Tapping outside a field closes the keyboard (Android leaves it open by default). Taps
+      // that a widget handles (a button, another field, the map) never reach this detector.
+      builder: (context, child) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: child,
+      ),
     );
   }
 }

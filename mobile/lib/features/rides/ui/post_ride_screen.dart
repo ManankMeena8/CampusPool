@@ -222,6 +222,7 @@ class _PostRideScreenState extends ConsumerState<PostRideScreen> {
 
     return ListView(
       padding: const EdgeInsets.all(16),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       children: [
         PickerField(
           label: 'From',
@@ -294,6 +295,7 @@ class _PostRideScreenState extends ConsumerState<PostRideScreen> {
           controller: _price,
           enabled: !_posting,
           keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.next,
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
             LengthLimitingTextInputFormatter(4),

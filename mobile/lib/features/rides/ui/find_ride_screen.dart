@@ -164,6 +164,7 @@ class _FindRideScreenState extends ConsumerState<FindRideScreen> {
       appBar: AppBar(title: const Text('Find a ride')),
       body: ListView(
         padding: const EdgeInsets.all(16),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         children: [
           PickerField(
             label: 'Pickup',
