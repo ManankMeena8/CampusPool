@@ -15,6 +15,7 @@ app.post(
   }),
   (req, res) => res.json({ params: req.params, query: req.query, body: req.body }),
 );
+app.get('/nothing', validate({}), (_req, res) => res.json({ ok: true }));
 app.use(errorHandler);
 
 const ID = '3f1c2c5e-7a43-4c1e-9d0a-1b2c3d4e5f60';
@@ -44,5 +45,20 @@ describe('validate middleware', () => {
 
   it('treats a missing body as an empty object', async () => {
     await request(app).post(`/items/${ID}`).expect(400);
+  });
+
+  it('accepts a route without input when nothing is sent, or an empty body', async () => {
+    await request(app).get('/nothing').expect(200);
+    await request(app).get('/nothing').send({}).expect(200);
+  });
+
+  it.each([
+    ['a query', (r) => r.query({ status: 'OPEN' }), /query: .*status/],
+    ['a body', (r) => r.send({ status: 'OPEN' }), /body: .*status/],
+    ['a JSON array body', (r) => r.send([1]), /body: /],
+  ])('refuses %s on a part the route does not declare', async (_label, add, pattern) => {
+    const res = await add(request(app).get('/nothing')).expect(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.message).toMatch(pattern);
   });
 });

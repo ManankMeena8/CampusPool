@@ -185,6 +185,12 @@ describe('POST /rides/:id/complete', () => {
     await request(app).post(`/rides/${randomUUID()}/complete`).expect(401);
   });
 
+  it('rejects a malformed id', async () => {
+    const { driver } = await setup();
+    const res = await complete(driver.token, 'not-a-uuid').expect(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('answers 404 for an unknown ride', async () => {
     const { driver } = await setup();
     const res = await complete(driver.token, randomUUID()).expect(404);
