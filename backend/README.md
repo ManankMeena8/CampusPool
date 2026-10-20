@@ -25,6 +25,44 @@ npm run dev                 # http://localhost:3000
 | `npm run migrate:test`            | Apply migrations to the test database                                       |
 | `npm test`                        | `migrate:test`, then the full Jest suite                                    |
 | `npm run lint` / `npm run format` | ESLint / Prettier                                                           |
+| `npm run seed:dev -- ...`         | Create verified dev accounts without email codes (see below)                |
+
+### Dev seed
+
+Runs only with `NODE_ENV=development` and writes to the dev database:
+
+```sh
+npm run seed:dev -- --demo <password>      # demo.driver@ (BOTH) + demo.rider@ (RIDER) + a sample ride
+npm run seed:dev -- <email> <password>     # one verified RIDER
+```
+
+The demo ride is OPEN, has 3 seats and departs 2 hours after the run, near NSUT Dwarka. Its
+coordinates are constants at the top of `scripts/seed-dev.js`. Re-running never changes an
+existing account (it keeps its password) and adds no ride while the driver has an upcoming one.
+
+## Push notifications
+
+Sent through Firebase Cloud Messaging (`firebase-admin`) after each change commits: booking
+requested, accepted, rejected and cancelled; ride started (to accepted riders, and to riders whose
+pending requests it rejected) and ride cancelled. The app registers its device token with
+`PUT /users/me/fcm-token`; logout clears it.
+
+Set `FIREBASE_SERVICE_ACCOUNT_PATH` in `.env` to the absolute path of the service account JSON,
+kept **outside the repo** (for example `C:/secrets/campuspool-firebase.json` locally, or a
+Render secret file under `/etc/secrets/`). When it is unset
+or unreadable, the API starts anyway, logs that notifications are disabled and skips every send.
+Tests never send: `tests/setup.js` empties the variable. A failed send is logged and never fails
+the request; tokens FCM reports as invalid are cleared.
+
+## Production
+
+- `NODE_ENV=production` requires `CORS_ORIGIN` to list exact origins (`https://app.example.com`,
+  no trailing slash); `*` is refused at startup.
+- `trust proxy` is 1 in production (Render's single proxy), so rate limits see the client IP.
+- Rate limits on `/auth` (in memory, so run a **single instance**, as for live locations):
+  100 requests / 15 min per IP on every route but refresh, 1000 / 15 min per IP on
+  `/auth/refresh`, and 10 failed logins / 15 min per IP + email. Refused requests get
+  `429 RATE_LIMITED` with `Retry-After`. Off in tests unless `RATE_LIMIT_IN_TESTS=1`.
 
 ## Tests
 
