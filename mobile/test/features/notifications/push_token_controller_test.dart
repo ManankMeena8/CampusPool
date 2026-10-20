@@ -68,24 +68,27 @@ void main() {
     verifyNever(() => users.setFcmToken(any()));
   });
 
-  test('a profile update is not a new session: nothing is sent again', () async {
-    controller.onAuthChanged(signedIn);
-    controller.onAuthChanged(
-      AuthAuthenticated(
-        AppUser(
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: Role.both,
-          isVerified: true,
+  test(
+    'a profile update is not a new session: nothing is sent again',
+    () async {
+      controller.onAuthChanged(signedIn);
+      controller.onAuthChanged(
+        AuthAuthenticated(
+          AppUser(
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: Role.both,
+            isVerified: true,
+          ),
         ),
-      ),
-    );
-    await controller.idle;
+      );
+      await controller.idle;
 
-    expect(messaging.permissionRequests, 1);
-    verify(() => users.setFcmToken(any())).called(1);
-  });
+      expect(messaging.permissionRequests, 1);
+      verify(() => users.setFcmToken(any())).called(1);
+    },
+  );
 
   test('a rotated token is sent while signed in', () async {
     controller.onAuthChanged(signedIn);
@@ -137,9 +140,9 @@ void main() {
   });
 
   test('a failed upload is swallowed and later steps still run', () async {
-    when(() => users.setFcmToken(any())).thenThrow(
-      const ApiError(code: ApiError.network, message: 'offline'),
-    );
+    when(
+      () => users.setFcmToken(any()),
+    ).thenThrow(const ApiError(code: ApiError.network, message: 'offline'));
 
     controller.onAuthChanged(signedIn);
     controller.onAuthChanged(signedOut);

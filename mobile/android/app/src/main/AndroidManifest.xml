@@ -9,8 +9,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <!-- Android 14+: required for a service of type "location". -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
-    <!-- Android 13+: needed to show the service's notification. Requested at runtime in Phase 7
-         (firebase_messaging); without it tracking still runs, the notification is just hidden. -->
+    <!-- Android 13+: needed to show any notification, push or the tracking service's. Requested
+         right after sign-in; if denied, push and tracking still run, nothing is shown. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- The wake and wifi locks that keep the CPU and wifi up while the screen is off. -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
@@ -43,6 +43,17 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- FCM shows the API's notifications itself while the app is in the background: on the
+             channel the app creates at startup (lib/features/notifications), with this icon. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="ride_updates" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/brand_blue" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

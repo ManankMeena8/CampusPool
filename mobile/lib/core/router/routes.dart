@@ -27,6 +27,9 @@ class Routes {
 
   static String liveRideFor(String id) => '${rideDetailFor(id)}/live';
 
+  /// A top-level path as a route under [home] (go_router wants it without the leading '/').
+  static String child(String path) => path.substring(1);
+
   /// Screens reachable without a session.
   static const public = {login, signup, verifyOtp};
 

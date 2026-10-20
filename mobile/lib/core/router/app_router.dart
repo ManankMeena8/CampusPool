@@ -59,42 +59,62 @@ final routerProvider = Provider<GoRouter>((ref) {
               int.tryParse(state.uri.queryParameters['cooldown'] ?? '') ?? 0,
         ),
       ),
-      GoRoute(path: Routes.home, builder: (_, _) => const HomeScreen()),
-      GoRoute(path: Routes.profile, builder: (_, _) => const ProfileScreen()),
+      // Every signed-in screen sits under home, so a deep link (a tapped notification) opens
+      // with home underneath and back goes there. Paths stay absolute: '/rides/:id' etc.
       GoRoute(
-        path: Routes.pickLocation,
-        builder: (_, state) => LocationPickerScreen(
-          args:
-              state.extra as PickLocationArgs? ??
-              const PickLocationArgs(title: 'Choose a location'),
-        ),
-      ),
-      GoRoute(path: Routes.postRide, builder: (_, _) => const PostRideScreen()),
-      GoRoute(path: Routes.myRides, builder: (_, _) => const MyRidesScreen()),
-      GoRoute(path: Routes.findRide, builder: (_, _) => const FindRideScreen()),
-      GoRoute(
-        path: Routes.myBookings,
-        builder: (_, _) => const MyBookingsScreen(),
-      ),
-      GoRoute(
-        path: Routes.searchResults,
-        // `extra` does not survive the app being killed: start the search over.
-        redirect: (_, state) =>
-            state.extra is RideSearchCriteria ? null : Routes.findRide,
-        builder: (_, state) =>
-            SearchResultsScreen(criteria: state.extra! as RideSearchCriteria),
-      ),
-      GoRoute(
-        path: Routes.rideDetail,
-        builder: (_, state) => RideDetailScreen(
-          id: state.pathParameters['id']!,
-          args: state.extra as RideDetailArgs? ?? const RideDetailArgs(),
-        ),
+        path: Routes.home,
+        builder: (_, _) => const HomeScreen(),
         routes: [
           GoRoute(
-            path: Routes.liveRide,
-            builder: (_, state) =>
-                LiveRideScreen(rideId: state.pathParameters['id']!),
+            path: Routes.child(Routes.profile),
+            builder: (_, _) => const ProfileScreen(),
+          ),
+          GoRoute(
+            path: Routes.child(Routes.pickLocation),
+            builder: (_, state) => LocationPickerScreen(
+              args:
+                  state.extra as PickLocationArgs? ??
+                  const PickLocationArgs(title: 'Choose a location'),
+            ),
+          ),
+          GoRoute(
+            path: Routes.child(Routes.postRide),
+            builder: (_, _) => const PostRideScreen(),
+          ),
+          GoRoute(
+            path: Routes.child(Routes.myRides),
+            builder: (_, _) => const MyRidesScreen(),
+          ),
+          GoRoute(
+            path: Routes.child(Routes.findRide),
+            builder: (_, _) => const FindRideScreen(),
+          ),
+          GoRoute(
+            path: Routes.child(Routes.myBookings),
+            builder: (_, _) => const MyBookingsScreen(),
+          ),
+          GoRoute(
+            path: Routes.child(Routes.searchResults),
+            // `extra` does not survive the app being killed: start the search over.
+            redirect: (_, state) =>
+                state.extra is RideSearchCriteria ? null : Routes.findRide,
+            builder: (_, state) => SearchResultsScreen(
+              criteria: state.extra! as RideSearchCriteria,
+            ),
+          ),
+          GoRoute(
+            path: Routes.child(Routes.rideDetail),
+            builder: (_, state) => RideDetailScreen(
+              id: state.pathParameters['id']!,
+              args: state.extra as RideDetailArgs? ?? const RideDetailArgs(),
+            ),
+            routes: [
+              GoRoute(
+                path: Routes.liveRide,
+                builder: (_, state) =>
+                    LiveRideScreen(rideId: state.pathParameters['id']!),
+              ),
+            ],
           ),
         ],
       ),

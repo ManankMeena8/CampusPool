@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Same as the seed colour in lib/core/theme/app_theme.dart. -->
+    <color name="brand_blue">#1E6FD9</color>
+</resources>
