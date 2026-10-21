@@ -65,6 +65,17 @@ Real-time ride-pooling app for verified college students and staff.
   - Driver: geolocator stream (high accuracy, 20 m distance filter) in an Android foreground service with an ongoing notification, started from the foreground, so no ACCESS_BACKGROUND_LOCATION. LocationEmitter sends at most one fix per 2.2 s (latest wins) and resends the last fix after 10 s without one, so a stopped car does not look lost
   - The Live ride screen (/rides/:id/live) owns tracking: closing it, or the ride ending, stops the tracker and disconnects. The driver leaving while IN_PROGRESS is asked first. Start ride checks location permission and GPS before calling /start
   - Riders: the marker glides between updates; "Last updated" uses the phone's receive time (the server's recordedAt, never in the future, for the join ack); a warning shows after 30 s without an update
+- Push (mobile, lib/features/notifications): firebase_core, firebase_messaging, flutter_local_notifications behind a PushMessaging interface (DisabledPushMessaging when Firebase fails to start, and in tests)
+  - PushTokenController follows authProvider: on sign-in it asks for the notification permission (this also shows the tracking notification on Android 13+), gets the token and PUTs /users/me/fcm-token; a token refresh is uploaded only while signed in; sign-out deletes the token on the device (the server clears it on logout). Steps run one at a time; failures are logged, never shown
+  - Uses the deprecated getToken/onTokenRefresh/deleteToken on purpose: register/onRegistered hand out a FID, but the backend sends to registration tokens
+  - Foreground messages are shown by flutter_local_notifications on the ride_updates channel (high importance; also the manifest's default channel, icon ic_notification and colour brand_blue)
+  - A tap (background, terminated or foreground) goes through routeForPush: rideStarted opens the Live ride screen, every other event the ride detail; no rideId does nothing. PushNavigator holds the route until signed in, then go() from splash or public routes, push() elsewhere
+  - Signed-in routes are nested under the home route (Routes.child), so a deep link lands on [home, ride] and Back returns home
+  - Profile shows "Notifications on/off" with a link to the app settings, re-checked when the app resumes
+- Theme: lib/core/theme/app_theme.dart owns field, button, card and snack bar styling (screens don't set borders), light and dark (follows the system). RideColors (ThemeExtension) holds the start/end/pickup colours; map pins always use the light set
+- Every main screen must fit a 320 x 568 dp phone at 1.3x text, with data, offline and empty: test/small_screens_test.dart
+- Build config (lib/core/config/app_config.dart, AppConfig.resolve): APP_ENV dev|prod; API_BASE_URL is required in a release build and in prod, prod requires https; the 10.0.2.2 default is for debug builds only. No URL is hardcoded; a bad config shows MisconfiguredApp. The Render URL is passed with --dart-define after deployment
+- Release: app label CampusPool, adaptive vector launcher icon (replaceable with flutter_launcher_icons, see mobile/README.md). Signing reads android/key.properties (gitignored, template key.properties.example) pointing at a keystore outside the repo; without it the release build uses the debug key with a Gradle warning. android/app/google-services.json is gitignored and required to build
 
 ## Known gaps (decided, not forgotten)
 - Rate-limit counts live in one process's memory, like the location store: another reason the API must run as a single instance, and a restart resets them
@@ -75,7 +86,6 @@ Real-time ride-pooling app for verified college students and staff.
 - A refresh that times out, or returns 200 with a body the client can't parse, after the server already rotated the token makes the retry look like reuse, which logs the user out everywhere. Accepted for the MVP; possible fix is a short server-side grace window.
 - OPEN rides past their departure time still show as OPEN in /rides/mine (nothing moves them to COMPLETED); the app must show them as expired
 - OPEN/FULL seat changes emit no socket event (bookings and ride cancels now send push notifications instead)
-- The mobile app does not register FCM tokens or handle notifications yet (Prompt 7.2), so nothing is delivered until then
 - One FCM token per user: only the most recently registered device gets notifications, and logging out on any device clears it
 - Notifications are fire-and-forget in the API process: no retry, no outbox. A failed send, or a crash between the commit and the send, loses that notification
 - Completing a ride sends no notification
@@ -90,6 +100,8 @@ Real-time ride-pooling app for verified college students and staff.
 - /rides/search matches only a ride's start and end points (each within the radius); a rider joining or leaving along the route (routeLine) is not matched yet
 - Routing uses the public OSRM demo server: rate-limited, no SLA, for light use only. Move to a self-hosted OSRM (set ROUTING_BASE_URL) before real traffic
 - Tracking stops if the driver swipes the app away or Android kills the process; it resumes only when they reopen the Live ride screen
-- The Android 13+ notification permission is not requested yet: until Phase 7 asks for it (with firebase_messaging), the tracking notification may be hidden. Tracking still runs
+- Android asks for the notification permission only a limited number of times: after a denial the app can only point to the system settings (Profile does). With it off, pushes and the tracking notification are hidden; tracking still runs
+- The ride_updates channel is created on the app's first start: a push that arrives before the first launch lands on FCM's fallback channel
+- A notification tap always opens the ride, even when the booking or ride has changed since; the screen then shows its current state
 - A rider whose booking is cancelled during the ride is removed from the room without an event: their screen just stops getting updates (and shows the 30 s warning) until a reconnect, whose join is refused
 - The 10 s heartbeat resends the last fix, so "Last updated" shows that the driver's app is alive, not that the car moved
