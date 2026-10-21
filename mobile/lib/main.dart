@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
+import 'core/api/api_client.dart';
+import 'core/config/app_config.dart';
 import 'features/auth/providers/auth_notifier.dart';
 import 'features/notifications/data/push_messaging.dart';
 import 'features/notifications/providers/push_navigator.dart';
@@ -9,9 +11,19 @@ import 'features/notifications/providers/push_token_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final AppConfig config;
+  try {
+    config = AppConfig.fromEnvironment();
+  } on AppConfigError catch (e) {
+    runApp(MisconfiguredApp(message: e.message));
+    return;
+  }
   final messaging = await startPushMessaging();
   final container = ProviderContainer(
-    overrides: [pushMessagingProvider.overrideWithValue(messaging)],
+    overrides: [
+      appConfigProvider.overrideWithValue(config),
+      pushMessagingProvider.overrideWithValue(messaging),
+    ],
   );
   // Before bootstrap, so the auto-login also registers the push token, and a notification
   // that launched the app opens its screen once the session is confirmed.

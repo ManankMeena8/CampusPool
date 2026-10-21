@@ -1,0 +1,8 @@
+# Copy to key.properties (gitignored) and fill in. Never commit key.properties or the keystore.
+# Create the keystore with keytool (see mobile/README.md, "Release build").
+# Forward slashes work on Windows too.
+storeFile=C:/secrets/campuspool-release.jks
+keyAlias=campuspool
+storePassword=
+# Same as storePassword for a PKCS12 keystore.
+keyPassword=

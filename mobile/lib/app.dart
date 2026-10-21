@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'core/widgets/error_view.dart';
 
 class CampusPoolApp extends ConsumerWidget {
   const CampusPoolApp({super.key});
@@ -23,4 +24,26 @@ class CampusPoolApp extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Shown instead of the app when the build itself is wrong (see AppConfig), so it fails on the
+/// first launch rather than with network errors on every screen.
+class MisconfiguredApp extends StatelessWidget {
+  const MisconfiguredApp({super.key, required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'CampusPool',
+    theme: AppTheme.light,
+    darkTheme: AppTheme.dark,
+    home: Scaffold(
+      body: SafeArea(
+        child: ErrorView(
+          message: 'This copy of CampusPool is misconfigured.\n\n$message',
+        ),
+      ),
+    ),
+  );
 }
