@@ -11,7 +11,9 @@ process.env.NODE_ENV = 'test';
 // Hermetic auth/mail settings so tests do not depend on the developer's .env.
 process.env.JWT_ACCESS_SECRET = 'test-secret-test-secret-test-secret-123456';
 process.env.ALLOWED_EMAIL_DOMAIN = 'campus.test';
+process.env.EMAIL_PROVIDER = 'smtp'; // nodemailer is mocked; Brevo tests build their own mailer
 process.env.SMTP_HOST = 'smtp.test.invalid';
+process.env.BREVO_API_KEY = '';
 process.env.MAIL_FROM = 'CampusPool <no-reply@campus.test>';
 // Routing calls are always mocked; this host can never resolve.
 process.env.ROUTING_BASE_URL = 'https://osrm.test.invalid';

@@ -107,6 +107,8 @@ describe('in production', () => {
   beforeAll(() => {
     process.env.NODE_ENV = 'production';
     process.env.CORS_ORIGIN = 'https://campuspool.example';
+    // Required in production; never read here (nothing in these tests sends a notification).
+    process.env.FIREBASE_SERVICE_ACCOUNT_PATH = '/nonexistent/firebase-service-account.json';
     jest.isolateModules(() => {
       prodApp = require('../src/app');
       prodPrisma = require('../src/lib/prisma');
@@ -114,6 +116,7 @@ describe('in production', () => {
   });
   afterAll(async () => {
     process.env.NODE_ENV = saved;
+    process.env.FIREBASE_SERVICE_ACCOUNT_PATH = '';
     if (savedCors === undefined) delete process.env.CORS_ORIGIN;
     else process.env.CORS_ORIGIN = savedCors;
     await prodPrisma.$disconnect();
