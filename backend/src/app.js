@@ -9,10 +9,11 @@ const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 
-// Render puts one proxy in front of the API: take the client IP (for the rate limits) from the
-// entry it adds to X-Forwarded-For. Without a proxy, trusting that header would let any client
-// choose its own IP, so it is trusted only in production.
-if (env.NODE_ENV === 'production') app.set('trust proxy', 1);
+// Render's proxies append the client IP to X-Forwarded-For: req.ip (used by the rate limits) is
+// the entry TRUST_PROXY_HOPS from the end (default 1; check it with /debug/client-ip after a
+// deploy). Too high lets a client choose its IP by sending the header itself. Without a proxy,
+// trusting the header at all would do that, so it is trusted only in production.
+if (env.NODE_ENV === 'production') app.set('trust proxy', env.TRUST_PROXY_HOPS);
 
 app.use(helmet());
 app.use(cors({ origin: corsOrigin }));
