@@ -1,0 +1,44 @@
+# Render Blueprint for the CampusPool API. Step-by-step setup: docs/deploy-render.md.
+# No secret values live here: every `sync: false` variable is entered in the Render dashboard
+# when the Blueprint is first applied (later syncs never prompt again; add new ones by hand).
+services:
+  - type: web
+    name: campuspool-api
+    runtime: node
+    plan: free
+    # Fixed at creation. Keep it next to the database: the production Neon project is in AWS
+    # ap-southeast-1 (Singapore). See the docs for the ohio fallback.
+    region: singapore
+    rootDir: backend
+    # NODE_ENV=production is set below, so npm ci skips devDependencies; prisma is a dependency.
+    buildCommand: npm ci && npx prisma generate
+    # The free plan has no pre-deploy command, so migrations run here, before the server, on every
+    # start (also each wake from sleep: a no-op then). exec hands SIGTERM straight to Node.
+    startCommand: node scripts/migrate-deploy.js && exec node src/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "20"
+      - key: EMAIL_PROVIDER
+        value: brevo
+      - key: FIREBASE_SERVICE_ACCOUNT_PATH
+        value: /etc/secrets/firebase-service-account.json
+      # Neon production project: pooled (-pooler) URL for the app, direct URL for migrations.
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      # A sender verified in Brevo, like: CampusPool <you@example.com>
+      - key: MAIL_FROM
+        sync: false
+      - key: ALLOWED_EMAIL_DOMAIN
+        sync: false
+      # The service's own URL, like https://campuspool-api.onrender.com (no trailing slash)
+      - key: CORS_ORIGIN
+        sync: false
