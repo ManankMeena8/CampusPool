@@ -2,7 +2,8 @@
 Real-time ride-pooling app for verified college students and staff.
 
 ## Stack
-- Backend: Node.js 20, Express, PostgreSQL + PostGIS (Neon), Prisma, zod, JWT, bcrypt, Socket.io, Nodemailer, firebase-admin (FCM), express-rate-limit
+- Backend: Node.js 20, Express, PostgreSQL + PostGIS (Neon), Prisma, zod, JWT, bcrypt, Socket.io, Nodemailer (dev) / Brevo HTTP API (production), firebase-admin (FCM), express-rate-limit
+- Hosting: Render free web service (render.yaml, region singapore) + Neon production project in AWS ap-southeast-1; step by step in docs/deploy-render.md
 - Mobile: Flutter, Riverpod, dio, go_router, flutter_map + OpenStreetMap, geolocator, flutter_secure_storage, FCM
 - Routing: OSRM public demo server (no key); isolated in routing.service.js
 - Only free services. No Google Maps, no Redis yet.
@@ -38,7 +39,13 @@ Real-time ride-pooling app for verified college students and staff.
   - The Neon test branch is still usable: set TEST_DATABASE_URL to it plus ALLOW_REMOTE_TEST_DB=1 (see backend/README.md)
 - Auth: access token 15 min, refresh token 7 days with rotation on every refresh
 - Rate limits (src/middleware/rateLimits.js, in memory, 429 RATE_LIMITED with Retry-After): 100 / 15 min per IP on every /auth route but refresh (generous: a campus shares one Wi-Fi IP), 1000 / 15 min per IP on /auth/refresh, and 10 failed logins / 15 min per IP + normalized email (successes not counted; the brute-force protection). Off in tests unless RATE_LIMIT_IN_TESTS=1 (tests/rateLimits.test.js)
-- trust proxy = 1 only when NODE_ENV=production (Render); elsewhere X-Forwarded-For is not trusted
+- trust proxy = TRUST_PROXY_HOPS (default 1) only when NODE_ENV=production (Render); elsewhere X-Forwarded-For is not trusted. GET /debug/client-ip (the caller's own req.ip and a count of X-Forwarded-For entries) exists only with DEBUG_CLIENT_IP=1, to check the hop count after a deploy; turn it off right after
+- Deployment (render.yaml, docs/deploy-render.md): build `npm ci && npx prisma generate`, start `node scripts/migrate-deploy.js && exec node src/server.js` (the free plan has no pre-deploy command; Prisma's advisory lock and the single instance make it safe; migrations must stay backward compatible because the old instance serves during a deploy). Secrets are `sync: false`; the Firebase key is a Render Secret File at /etc/secrets/firebase-service-account.json
+  - scripts/migrate-deploy.js migrates through DIRECT_URL (Neon direct URL) when set, else DATABASE_URL (pooled in production), with the CLI from node_modules. prisma is a dependency: NODE_ENV=production makes npm ci skip devDependencies, so the start command uses node, not cross-env
+  - Startup lists every missing or invalid variable at once (names and rules, never values). Production requires CORS_ORIGIN, MAIL_FROM and FIREBASE_SERVICE_ACCOUNT_PATH; an unreadable Firebase file still only disables pushes
+  - The server listens on 0.0.0.0:PORT. SIGTERM closes sockets, the HTTP server and Prisma once (src/lib/shutdown.js), forcing exit 1 after 10 s
+  - CORS_ORIGIN in production is the service's own https URL: the Android app sends no Origin, and Socket.io accepts its websocket without one (tests/production.test.js); the handshake token is what protects sockets
+- Email: EMAIL_PROVIDER=smtp (Nodemailer, Gmail SMTP for local development) or brevo (POST api.brevo.com/v3/smtp/email with BREVO_API_KEY; Render's free plan blocks outbound SMTP). Same OTP subject and text; MAIL_FROM ("Name <address>", a Brevo-verified sender) is parsed into Brevo's sender. Failures are 503 EMAIL_SEND_FAILED and log only Brevo's status and error code. Tests: nodemailer through moduleNameMapper, Brevo by spying on fetch; setup.js forces smtp
 - CORS: NODE_ENV=production requires CORS_ORIGIN as exact origins (no *, no trailing slash or path), checked at startup; outside production it defaults to *
 - Dev seed: `npm run seed:dev -- --demo <password>` creates verified demo.driver@ (BOTH) and demo.rider@ (RIDER) and an OPEN sample ride near NSUT Dwarka (constants at the top of scripts/seed-dev.js); never changes existing accounts
 - Rides: departure window, 200 m minimum trip and 1-hour overlap rule are enforced server-side; the full rule list is in the ride commit bodies
@@ -78,6 +85,10 @@ Real-time ride-pooling app for verified college students and staff.
 - Release: app label CampusPool, adaptive vector launcher icon (replaceable with flutter_launcher_icons, see mobile/README.md). Signing reads android/key.properties (gitignored, template key.properties.example) pointing at a keystore outside the repo; without it the release build uses the debug key with a Gradle warning. android/app/google-services.json is gitignored and required to build
 
 ## Known gaps (decided, not forgotten)
+- First follow-up: upgrade to Node 22 (and firebase-admin 14, which requires it). The launch runs NODE_VERSION=20, which reached end of life in April 2026
+- TRUST_PROXY_HOPS=1 is unverified on Render (Render doesn't document its proxy count; one report says 3): check with /debug/client-ip after the first deploy and record the result here
+- Render free plan: the service sleeps after ~15 min idle and takes 30-60 s to wake, longer than the app's 10 s request timeout; wake it with /health before a demo. Sleeps and deploys drop sockets and forget last locations and rate-limit counts
+- OTP emails from a free-mail sender through Brevo may land in spam; authenticating an owned domain in Brevo is the fix
 - Rate-limit counts live in one process's memory, like the location store: another reason the API must run as a single instance, and a restart resets them
 - Plus-addressing (a+1@, a+2@) can create duplicate accounts: accepted for the MVP
 - Access tokens stay valid up to 15 minutes after logout: accepted
