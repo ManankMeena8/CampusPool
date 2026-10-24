@@ -8,8 +8,9 @@ search and request seats, and riders follow the driver live on a map once the ri
 | [backend/](backend/) | Node.js 20, Express 4, Prisma 6, PostgreSQL + PostGIS (Neon), Socket.io, firebase-admin | [backend/README.md](backend/README.md) |
 | [mobile/](mobile/) | Flutter (Android only), Riverpod, dio, go_router, flutter_map + OpenStreetMap, FCM | [mobile/README.md](mobile/README.md) |
 
-Only free services: OpenStreetMap tiles, the public OSRM demo server for routes, any SMTP
-provider for email codes, and Firebase Cloud Messaging for push.
+Only free services: OpenStreetMap tiles, the public OSRM demo server for routes, SMTP (local
+development) or Brevo's free HTTP API (production) for email codes, Firebase Cloud Messaging for
+push, and Render's free plan with Neon for hosting.
 
 ## Architecture
 
@@ -42,7 +43,7 @@ flowchart LR
   Sock -- "WebSocket, auth.token" --> RT
   Prisma --> DB[("PostgreSQL + PostGIS<br/>(Neon)")]
   Svc -- "routes for new rides" --> OSRM["OSRM demo server"]
-  Svc -- "OTP emails" --> SMTP["SMTP (Nodemailer)"]
+  Svc -- "OTP emails" --> SMTP["SMTP (dev) or<br/>Brevo HTTP API (Render)"]
   Notify --> FCM["Firebase Cloud Messaging"]
   FCM --> Push
 ```
@@ -98,16 +99,21 @@ private networks.
 | --- | --- | --- | --- |
 | `NODE_ENV` | no | `development` | `development`, `test` or `production` (`npm start` sets production) |
 | `PORT` | no | `3000` | HTTP and Socket.io port |
-| `DATABASE_URL` | **yes** | | PostgreSQL + PostGIS connection string (Neon) |
+| `DATABASE_URL` | **yes** | | PostgreSQL + PostGIS connection string (Neon; the pooled URL in production) |
+| `DIRECT_URL` | no | `DATABASE_URL` | Direct (non-pooled) URL, used only by `npm run migrate:deploy` |
 | `JWT_ACCESS_SECRET` | **yes** | | Signs access tokens and hashes OTP codes; at least 32 characters |
 | `ALLOWED_EMAIL_DOMAIN` | **yes** | | Only `@<domain>` emails can sign up. The example uses `nsut.ac.in`, the app's default; another domain needs the same `--dart-define` in the app |
-| `SMTP_HOST` | **yes** | | SMTP server for OTP emails |
+| `EMAIL_PROVIDER` | no | `smtp` | `smtp` (Nodemailer) or `brevo` (Brevo HTTP API; Render blocks SMTP) |
+| `SMTP_HOST` | with `smtp` | | SMTP server for OTP emails |
 | `SMTP_PORT` | no | `587` | `465` switches to implicit TLS |
 | `SMTP_USER`, `SMTP_PASS` | no | | SMTP credentials |
-| `MAIL_FROM` | no | `CampusPool <no-reply@campuspool.local>` | Sender of OTP emails |
+| `BREVO_API_KEY` | with `brevo` | | Brevo API key |
+| `MAIL_FROM` | in production | `CampusPool <no-reply@campuspool.local>` | Sender of OTP emails, `Name <address>`; with Brevo, a verified sender |
 | `CORS_ORIGIN` | in production | `*` outside production | Comma-separated exact origins; `*` refused in production |
 | `ROUTING_BASE_URL` | no | `https://router.project-osrm.org` | OSRM server for ride routes |
-| `FIREBASE_SERVICE_ACCOUNT_PATH` | no | | Absolute path to the Firebase service account JSON, **outside the repo**. Unset: pushes are skipped |
+| `FIREBASE_SERVICE_ACCOUNT_PATH` | in production | | Absolute path to the Firebase service account JSON, **outside the repo**. Unset (outside production) or unreadable: pushes are skipped |
+| `TRUST_PROXY_HOPS` | no | `1` | Production only: proxies in front of the API, for the client IP |
+| `DEBUG_CLIENT_IP` | no | off | `1` turns on `GET /debug/client-ip`; turn it off right after checking |
 
 Test-only (`backend/.env.test`, template in [backend/.env.test.example](backend/.env.test.example)):
 
@@ -128,6 +134,12 @@ Test-only (`backend/.env.test`, template in [backend/.env.test.example](backend/
 Files that are never committed: `backend/.env`, `backend/.env.test`,
 `mobile/android/app/google-services.json`, `mobile/android/key.properties`, the release keystore
 and the Firebase service account JSON.
+
+## Deployment
+
+The API deploys to Render's free plan (region Singapore, next to a Neon production project in
+ap-southeast-1) from [render.yaml](render.yaml). Step by step, with the environment variables,
+smoke tests, cold starts and the release APK: [docs/deploy-render.md](docs/deploy-render.md).
 
 ## Running tests
 
@@ -164,6 +176,7 @@ empty, so unexpected fields get `400 VALIDATION_ERROR`.
 | Method | Path | Auth | Who | Input validated |
 | --- | --- | --- | --- | --- |
 | GET | `/health` | no | anyone | none accepted |
+| GET | `/debug/client-ip` | no | anyone; **exists only with `DEBUG_CLIENT_IP=1`** | none accepted |
 | POST | `/auth/signup` | no | anyone | body: name, email (allowed domain), password (8-72, letter + digit) |
 | POST | `/auth/verify-otp` | no | anyone | body: email, 6-digit code |
 | POST | `/auth/resend-otp` | no | anyone | body: email |

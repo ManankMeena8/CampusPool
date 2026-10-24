@@ -15,17 +15,17 @@ npm run dev                 # http://localhost:3000
 
 ## Scripts
 
-| Script                            | What it does                                                                |
-| --------------------------------- | --------------------------------------------------------------------------- |
-| `npm run dev`                     | Start the API with nodemon                                                  |
-| `npm run migrate`                 | Create and apply a new migration (`prisma migrate dev`) on the dev database |
-| `npm run migrate:deploy`          | Apply pending migrations to the dev database                                |
-| `npm run db:test:up`              | Start the local test database and wait until it is healthy                  |
-| `npm run db:test:down`            | Stop and remove the local test database (all its data is discarded)         |
-| `npm run migrate:test`            | Apply migrations to the test database                                       |
-| `npm test`                        | `migrate:test`, then the full Jest suite                                    |
-| `npm run lint` / `npm run format` | ESLint / Prettier                                                           |
-| `npm run seed:dev -- ...`         | Create verified dev accounts without email codes (see below)                |
+| Script                            | What it does                                                                  |
+| --------------------------------- | ----------------------------------------------------------------------------- |
+| `npm run dev`                     | Start the API with nodemon                                                    |
+| `npm run migrate`                 | Create and apply a new migration (`prisma migrate dev`) on the dev database   |
+| `npm run migrate:deploy`          | Apply pending migrations (through `DIRECT_URL` when set, else `DATABASE_URL`) |
+| `npm run db:test:up`              | Start the local test database and wait until it is healthy                    |
+| `npm run db:test:down`            | Stop and remove the local test database (all its data is discarded)           |
+| `npm run migrate:test`            | Apply migrations to the test database                                         |
+| `npm test`                        | `migrate:test`, then the full Jest suite                                      |
+| `npm run lint` / `npm run format` | ESLint / Prettier                                                             |
+| `npm run seed:dev -- ...`         | Create verified dev accounts without email codes (see below)                  |
 
 ### Dev seed
 
@@ -49,8 +49,9 @@ pending requests it rejected) and ride cancelled. The app registers its device t
 
 Set `FIREBASE_SERVICE_ACCOUNT_PATH` in `.env` to the absolute path of the service account JSON,
 kept **outside the repo** (for example `C:/secrets/campuspool-firebase.json` locally, or a
-Render secret file under `/etc/secrets/`). When it is unset
-or unreadable, the API starts anyway, logs that notifications are disabled and skips every send.
+Render secret file under `/etc/secrets/`). It is required in production. Elsewhere, when it is
+unset, and anywhere when the file is unreadable, the API starts anyway, logs that notifications
+are disabled and skips every send.
 Tests never send: `tests/setup.js` empties the variable. A failed send is logged and never fails
 the request; tokens FCM reports as invalid are cleared.
 
@@ -58,7 +59,20 @@ the request; tokens FCM reports as invalid are cleared.
 
 - `NODE_ENV=production` requires `CORS_ORIGIN` to list exact origins (`https://app.example.com`,
   no trailing slash); `*` is refused at startup.
-- `trust proxy` is 1 in production (Render's single proxy), so rate limits see the client IP.
+- Deployment to Render (free plan, from `render.yaml` at the repo root): see
+  [docs/deploy-render.md](../docs/deploy-render.md). The start command runs
+  `scripts/migrate-deploy.js` (migrations through `DIRECT_URL`, Neon's direct URL, when set),
+  then the server, which listens on `0.0.0.0:$PORT`.
+- Startup refuses to run with a missing or invalid variable and lists the names, never the
+  values. Production also requires `MAIL_FROM` and `FIREBASE_SERVICE_ACCOUNT_PATH`.
+- OTP emails: `EMAIL_PROVIDER=smtp` (Nodemailer, local development) or `brevo` (Brevo's HTTP API
+  with `BREVO_API_KEY`; Render's free plan blocks outbound SMTP). Same message either way; tests
+  mock both (nodemailer through `moduleNameMapper`, Brevo by spying on `fetch`).
+- SIGTERM (every Render deploy) closes the sockets, the HTTP server and Prisma, and exits; after
+  10 s it forces the exit.
+- `trust proxy` is `TRUST_PROXY_HOPS` (default 1) in production, so rate limits see the client
+  IP. Check it after a deploy with `DEBUG_CLIENT_IP=1` and `GET /debug/client-ip` (404 when off;
+  turn it off right after checking).
 - Rate limits on `/auth` (in memory, so run a **single instance**, as for live locations):
   100 requests / 15 min per IP on every route but refresh, 1000 / 15 min per IP on
   `/auth/refresh`, and 10 failed logins / 15 min per IP + email. Refused requests get
