@@ -63,6 +63,11 @@ the request; tokens FCM reports as invalid are cleared.
   [docs/deploy-render.md](../docs/deploy-render.md). The start command runs
   `scripts/migrate-deploy.js` (migrations through `DIRECT_URL`, Neon's direct URL, when set),
   then the server, which listens on `0.0.0.0:$PORT`.
+- Render uses npm 10. After changing dependencies, regenerate the lock file with
+  `npx npm@10 install` (or check with
+  `docker run --rm -e NODE_ENV=production -v "$PWD:/app" -w /app node:20.20.2 npm ci` in a clean
+  copy of `backend/`) before pushing. npm 11 can write a lock file that npm 10's `npm ci`
+  refuses as out of sync.
 - Startup refuses to run with a missing or invalid variable and lists the names, never the
   values. Production also requires `MAIL_FROM` and `FIREBASE_SERVICE_ACCOUNT_PATH`.
 - OTP emails: `EMAIL_PROVIDER=smtp` (Nodemailer, local development) or `brevo` (Brevo's HTTP API
