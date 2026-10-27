@@ -211,7 +211,3 @@ Socket.io events (same server; the access token goes in the handshake's `auth.to
 | `ride:status` (server → client) | room members | |
 | `driver:location` (server → client) | room members except the driver | |
 
-## Known gaps
-
-Decided limits of the MVP (single instance, no pagination, no chat, fire-and-forget push, and
-more) are listed in [CLAUDE.md](CLAUDE.md#known-gaps-decided-not-forgotten).
