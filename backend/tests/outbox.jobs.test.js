@@ -64,8 +64,8 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-function startWorker(messaging, options = {}) {
-  const { deliver } = createNotifications({ getMessaging: () => messaging, db: prisma });
+function startWorker(messaging, { now, ...options } = {}) {
+  const { deliver } = createNotifications({ getMessaging: () => messaging, db: prisma, now });
   const worker = createNotificationWorker({
     connection: connectRedis({ blocking: true }),
     db: prisma,
@@ -506,6 +506,55 @@ describe('the event is checked again before sending', () => {
       attempts: 1,
     });
     expect(messaging.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('maximum age', () => {
+  const MINUTE = 60 * 1000;
+
+  it('a row older than its limit is SKIPPED as TOO_LATE, nothing sent', async () => {
+    const { id } = await startedRide();
+    // ride.started has 30 minutes: this one waited 31 (the service was asleep).
+    await prisma.outbox.update({
+      where: { id },
+      data: { createdAt: new Date(Date.now() - 31 * MINUTE) },
+    });
+    const messaging = fakeMessaging();
+    startWorker(messaging);
+
+    await makeRelay().tick();
+
+    expect(await waitFor(finished(id), 'the row to be finished')).toMatchObject({
+      status: 'SKIPPED',
+      lastError: 'TOO_LATE',
+      attempts: 1,
+    });
+    await waitFor(
+      async () => (await (await queue.getJob(id)).getState()) === 'completed',
+      'the job to complete',
+    );
+    expect(messaging.send).not.toHaveBeenCalled();
+  });
+
+  it('a retry that runs out of time is SKIPPED as TOO_LATE, not retried again', async () => {
+    const { id } = await startedRide();
+    let clock = Date.now();
+    // The first attempt fails, and by the retry the row is past its 30 minutes.
+    const messaging = fakeMessaging(() => {
+      clock += 31 * MINUTE;
+      throw fcmError('messaging/server-unavailable');
+    });
+    startWorker(messaging, { now: () => clock });
+
+    await makeRelay().tick();
+
+    expect(await waitFor(finished(id), 'the row to be finished')).toMatchObject({
+      status: 'SKIPPED',
+      lastError: 'TOO_LATE',
+      attempts: 2,
+    });
+    await settle();
+    expect(messaging.send).toHaveBeenCalledTimes(1);
   });
 });
 

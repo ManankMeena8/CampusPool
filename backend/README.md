@@ -80,20 +80,22 @@ flowchart LR
 3. **Recovery.** A row still `ENQUEUED` after 5 minutes is handed to the queue again, which
    covers a Redis restart that lost the job. BullMQ ignores a `jobId` it already has, so a job
    that still exists is not duplicated.
-4. **Worker.** For each job it loads the row (finished: nothing to do), checks that the event is
-   **still true** (an "accepted" push only while the booking is ACCEPTED, "ride started" only
+4. **Worker.** For each job it loads the row (finished: nothing to do), checks that the row is
+   not **too old** for its type (30 minutes for a new request and a started ride, 6 hours for
+   the other events, counted from the commit), checks that the event is **still true** (an "accepted" push only while the booking is ACCEPTED, "ride started" only
    while IN_PROGRESS), looks up the recipient's token **now**, and sends with the Android
    notification tag and `data.outboxId` set to the outbox id, so a duplicate replaces the first
    notification on the phone.
 
-| Outcome                                                                     | Row                   | Retry                                                                          |
-| --------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------ |
-| Sent                                                                        | `SENT`                |                                                                                |
-| No token, event no longer true, record gone, Firebase not configured        | `SKIPPED` + reason    | no                                                                             |
-| Token invalid or unregistered (the token is cleared, if it is still theirs) | `SKIPPED` + FCM code  | no (`UnrecoverableError`)                                                      |
-| `invalid-argument` (the token is kept: it can also mean a bad message)      | `SKIPPED` + FCM code  | no                                                                             |
-| Anything else (unavailable, timeout, internal, quota, unknown)              | stays `ENQUEUED`      | 8 attempts, exponential backoff from 5 s with jitter (about 10 minutes in all) |
-| The last attempt failed                                                     | `FAILED` + error code | no; the job stays in BullMQ's failed set for 7 days (the dead letter)          |
+| Outcome                                                                     | Row                    | Retry                                                                          |
+| --------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------ |
+| Sent                                                                        | `SENT`                 |                                                                                |
+| Older than its type's limit (also on a retry)                               | `SKIPPED` + `TOO_LATE` | no                                                                             |
+| No token, event no longer true, record gone, Firebase not configured        | `SKIPPED` + reason     | no                                                                             |
+| Token invalid or unregistered (the token is cleared, if it is still theirs) | `SKIPPED` + FCM code   | no (`UnrecoverableError`)                                                      |
+| `invalid-argument` (the token is kept: it can also mean a bad message)      | `SKIPPED` + FCM code   | no                                                                             |
+| Anything else (unavailable, timeout, internal, quota, unknown)              | stays `ENQUEUED`       | 8 attempts, exponential backoff from 5 s with jitter (about 10 minutes in all) |
+| The last attempt failed                                                     | `FAILED` + error code  | no; the job stays in BullMQ's failed set for 7 days (the dead letter)          |
 
 `lastError`, and everything logged or stored in Redis, is a short code, never an error message
 (messages can quote tokens and URLs). Completed jobs are removed after 1 hour, failed ones after

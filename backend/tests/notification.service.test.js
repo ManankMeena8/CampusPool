@@ -4,10 +4,12 @@ const path = require('path');
 const { prisma, resetDb } = require('./helpers/auth');
 const { createUser, insertRide } = require('./helpers/rides');
 const { insertBooking } = require('./helpers/bookings');
+const NOTIFICATION_TYPES = require('../src/lib/notificationTypes');
 const { insertOutbox, fcmError, fakeMessaging, withToken, tokenOf } = require('./helpers/outbox');
 const {
   createNotifications,
   loadMessaging,
+  MAX_AGE_MS,
   PermanentSendError,
   TemporarySendError,
 } = require('../src/services/notification.service');
@@ -313,5 +315,117 @@ describe('deliver', () => {
       await expect(sender(messaging).deliver(row)).rejects.toBeInstanceOf(PermanentSendError);
       expect(await tokenOf(rider)).toBe('new-token');
     });
+  });
+});
+
+describe('maximum age', () => {
+  const MINUTE = 60 * 1000;
+  const HOUR = 60 * MINUTE;
+  const NOW = Date.UTC(2026, 10, 17, 12, 0, 0);
+  const clock = () => NOW;
+
+  it('is 30 min for a new request and a started ride, 6 h for the rest', () => {
+    expect(MAX_AGE_MS).toEqual({
+      'booking.requested': 30 * MINUTE,
+      'ride.started': 30 * MINUTE,
+      'booking.accepted': 6 * HOUR,
+      'booking.rejected': 6 * HOUR,
+      'booking.cancelled': 6 * HOUR,
+      'booking.autoRejected': 6 * HOUR,
+      'ride.cancelled': 6 * HOUR,
+    });
+    // Every type has a limit.
+    expect(Object.keys(MAX_AGE_MS).sort()).toEqual(Object.values(NOTIFICATION_TYPES).sort());
+  });
+
+  describe.each(Object.entries(MAX_AGE_MS))('%s', (type, maxAgeMs) => {
+    // A database that finds nothing: getting as far as 'gone' means the age check passed.
+    const emptyDb = () => ({
+      user: { findUnique: jest.fn(async () => null) },
+      ride: { findUnique: jest.fn(async () => null) },
+      booking: { findUnique: jest.fn(async () => null) },
+    });
+    const rowAged = (ageMs) => ({
+      id: 'o',
+      type,
+      recipientUserId: 'u',
+      payload: { rideId: 'r', bookingId: 'b' },
+      createdAt: new Date(NOW - ageMs),
+    });
+
+    it('is still sent at exactly its limit', async () => {
+      const db = emptyDb();
+      const notifications = createNotifications({ getMessaging: fakeMessaging, db, now: clock });
+      expect(await notifications.deliver(rowAged(maxAgeMs))).toEqual({
+        status: 'SKIPPED',
+        reason: 'gone',
+      });
+    });
+
+    it('is TOO_LATE 1 ms later, before any lookup or send', async () => {
+      const db = emptyDb();
+      const messaging = fakeMessaging();
+      const notifications = createNotifications({
+        getMessaging: () => messaging,
+        db,
+        now: clock,
+      });
+      expect(await notifications.deliver(rowAged(maxAgeMs + 1))).toEqual({
+        status: 'SKIPPED',
+        reason: 'TOO_LATE',
+      });
+      for (const model of Object.values(db)) expect(model.findUnique).not.toHaveBeenCalled();
+      expect(messaging.send).not.toHaveBeenCalled();
+    });
+  });
+
+  it('measures from when the change committed, against the real records', async () => {
+    const { driver, rider, rideId, bookingId } = await setup();
+    await withToken(driver, 'driver-token');
+    const now = Date.now();
+    const at = (ageMs) => ({ createdAt: new Date(now - ageMs) });
+    const fresh = await insertOutbox(
+      'booking.requested',
+      driver.user.id,
+      { rideId, bookingId },
+      at(29 * MINUTE),
+    );
+    const late = await insertOutbox(
+      'booking.requested',
+      driver.user.id,
+      { rideId, bookingId },
+      at(31 * MINUTE),
+    );
+    // The same age is fine for a type with the 6 h limit.
+    await withToken(rider, 'rider-token');
+    const rejected = await insertOutbox(
+      'booking.rejected',
+      rider.user.id,
+      { rideId, bookingId },
+      at(31 * MINUTE),
+    );
+    const messaging = fakeMessaging();
+    const { deliver } = createNotifications({
+      getMessaging: () => messaging,
+      db: prisma,
+      now: () => now,
+    });
+
+    expect(await deliver(late)).toEqual({ status: 'SKIPPED', reason: 'TOO_LATE' });
+    expect(messaging.send).not.toHaveBeenCalled();
+    expect(await deliver(fresh)).toEqual({ status: 'SENT' });
+    await setBooking(bookingId, 'REJECTED');
+    expect(await deliver(rejected)).toEqual({ status: 'SENT' });
+    expect(messaging.send.mock.calls.map(([m]) => m.data.type)).toEqual([
+      'booking.requested',
+      'booking.rejected',
+    ]);
+  });
+
+  it('is checked after "not configured"', async () => {
+    const notifications = createNotifications({ getMessaging: () => null, db: {} });
+    expect(
+      await notifications.deliver({ id: 'o', type: 'ride.started', createdAt: new Date(0) }),
+    ).toEqual({ status: 'SKIPPED', reason: 'not-configured' });
   });
 });

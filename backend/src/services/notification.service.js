@@ -83,17 +83,25 @@ function loadMessaging(config = env) {
 
 const seatCount = (n) => `${n} seat${n === 1 ? '' : 's'}`;
 
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+
 /*
  * One entry per event:
- *   about    which record the message describes, loaded when sending
- *   current  whether the event is still true for that record; if not, nothing is sent (a retry
- *            or a late job must not announce something that has since been undone)
- *   text     { title, body } from the record and the row's payload
+ *   about     which record the message describes, loaded when sending
+ *   maxAgeMs  how long after the change (the row's createdAt) the message is still worth
+ *             sending; an older row is SKIPPED as TOO_LATE (a service that slept, a long retry).
+ *             30 min where the reader has to act now (answer a request, go to the pickup),
+ *             6 h where the news is still useful later
+ *   current   whether the event is still true for that record; if not, nothing is sent (a retry
+ *             or a late job must not announce something that has since been undone)
+ *   text      { title, body } from the record and the row's payload
  */
 const EVENTS = {
   /** To the driver: a rider asked for seats. */
   [T.bookingRequested]: {
     about: 'booking',
+    maxAgeMs: 30 * MINUTE,
     current: (b) => b.status === 'PENDING',
     text: (b) => ({
       title: 'New ride request',
@@ -103,6 +111,7 @@ const EVENTS = {
   /** To the rider: the driver accepted their request. */
   [T.bookingAccepted]: {
     about: 'booking',
+    maxAgeMs: 6 * HOUR,
     current: (b) => b.status === 'ACCEPTED',
     text: (b) => ({
       title: 'Request accepted',
@@ -112,6 +121,7 @@ const EVENTS = {
   /** To the rider: the driver rejected their request. */
   [T.bookingRejected]: {
     about: 'booking',
+    maxAgeMs: 6 * HOUR,
     current: (b) => b.status === 'REJECTED',
     text: (b) => ({
       title: 'Request declined',
@@ -121,6 +131,7 @@ const EVENTS = {
   /** To the driver: a rider cancelled a PENDING or ACCEPTED booking. */
   [T.bookingCancelled]: {
     about: 'booking',
+    maxAgeMs: 6 * HOUR,
     current: (b) => b.status === 'CANCELLED',
     text: (b, { wasAccepted }) => ({
       title: 'Booking cancelled',
@@ -132,6 +143,7 @@ const EVENTS = {
   /** To the riders whose PENDING requests were rejected when the ride started. */
   [T.bookingAutoRejected]: {
     about: 'ride',
+    maxAgeMs: 6 * HOUR,
     current: (r) => ['IN_PROGRESS', 'COMPLETED'].includes(r.status),
     text: (r) => ({
       title: 'Request not accepted',
@@ -141,6 +153,7 @@ const EVENTS = {
   /** To the riders whose PENDING or ACCEPTED bookings the driver's cancel ended. */
   [T.rideCancelled]: {
     about: 'ride',
+    maxAgeMs: 6 * HOUR,
     current: (r) => r.status === 'CANCELLED',
     text: (r) => ({
       title: 'Ride cancelled',
@@ -150,6 +163,7 @@ const EVENTS = {
   /** To the riders with an ACCEPTED booking. */
   [T.rideStarted]: {
     about: 'ride',
+    maxAgeMs: 30 * MINUTE,
     current: (r) => r.status === 'IN_PROGRESS',
     text: (r) => ({
       title: 'Ride started',
@@ -165,10 +179,18 @@ const RIDE_FIELDS = {
   driver: { select: { name: true } },
 };
 
+/** The age limit of each type, in ms. */
+const MAX_AGE_MS = Object.freeze(
+  Object.fromEntries(Object.entries(EVENTS).map(([type, e]) => [type, e.maxAgeMs])),
+);
+
 const skipped = (reason) => ({ status: 'SKIPPED', reason });
 
-/** The notification functions, over `getMessaging` (null when disabled) and the database. */
-function createNotifications({ getMessaging, db }) {
+/**
+ * The notification functions, over `getMessaging` (null when disabled), the database and the
+ * clock `now` (ms, like Date.now).
+ */
+function createNotifications({ getMessaging, db, now = Date.now }) {
   let messaging;
   const client = () => {
     if (messaging === undefined) messaging = getMessaging();
@@ -199,16 +221,18 @@ function createNotifications({ getMessaging, db }) {
   /**
    * Sends the outbox `row` to its recipient. Resolves to { status: 'SENT' }, or to
    * { status: 'SKIPPED', reason } when there is nothing to send: sending is not configured, the
-   * record is gone, the event is no longer true, or the recipient has no token (looked up now,
-   * not when the row was written). Throws PermanentSendError when FCM refuses for good (an
-   * invalid token is cleared first, unless the user registered a new one meanwhile) and
-   * TemporarySendError for anything worth retrying.
+   * row is older than its type's maximum age (TOO_LATE, checked on every attempt, so a retry can
+   * run out of time too), the record is gone, the event is no longer true, or the recipient has
+   * no token (looked up now, not when the row was written). Throws PermanentSendError when FCM
+   * refuses for good (an invalid token is cleared first, unless the user registered a new one
+   * meanwhile) and TemporarySendError for anything worth retrying.
    */
   async function deliver(row) {
     const fcm = client();
     if (!fcm) return skipped('not-configured');
     const event = EVENTS[row.type];
     if (!event) return skipped('unknown-type');
+    if (now() - new Date(row.createdAt).getTime() > event.maxAgeMs) return skipped('TOO_LATE');
 
     const payload = row.payload ?? {};
     const found = await load(event.about, payload);
@@ -258,6 +282,7 @@ module.exports = {
   ...createNotifications({ getMessaging: loadMessaging, db: prisma }),
   createNotifications,
   loadMessaging,
+  MAX_AGE_MS,
   errorCode,
   PermanentSendError,
   TemporarySendError,
