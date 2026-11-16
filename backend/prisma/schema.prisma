@@ -34,6 +34,7 @@ model User {
   refreshTokens RefreshToken[]
   rides         Ride[]
   bookings      Booking[]
+  outbox        Outbox[]
 }
 
 model EmailOtp {
@@ -126,4 +127,32 @@ model Booking {
 
   @@index([rideId, status])
   @@index([riderId, createdAt])
+}
+
+enum OutboxStatus {
+  PENDING // written with the state change, not yet handed to the queue
+  ENQUEUED // a BullMQ job exists (or existed) for it
+  SENT
+  SKIPPED // not sent on purpose: no token, the event is no longer true, a permanent FCM error
+  FAILED // every attempt failed
+}
+
+// Transactional outbox for push notifications: one row per recipient, inserted in the same
+// transaction as the change it announces. The relay hands rows to BullMQ (jobId = id); the
+// worker sends them and records the outcome here.
+model Outbox {
+  id              String       @id @default(uuid())
+  type            String // 'booking.requested', 'ride.started', ... (src/lib/notificationTypes.js)
+  recipientUserId String
+  payload         Json // { rideId, bookingId?, wasAccepted? }
+  status          OutboxStatus @default(PENDING)
+  attempts        Int          @default(0)
+  lastError       String? // a short code, never a message
+  createdAt       DateTime     @default(now())
+  enqueuedAt      DateTime?
+  processedAt     DateTime?
+
+  recipient User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
 }
