@@ -2,6 +2,20 @@
 # No secret values live here: every `sync: false` variable is entered in the Render dashboard
 # when the Blueprint is first applied (later syncs never prompt again; add new ones by hand).
 services:
+  # Redis-compatible store for the BullMQ notification queue. Syncing the Blueprint creates it.
+  # The free plan keeps nothing across a restart, which is fine: the Outbox table in Postgres is
+  # the source of truth and the relay re-enqueues what was lost.
+  - type: keyvalue
+    name: campuspool-redis
+    plan: free
+    # Fixed at creation, and it must match the web service: the internal URL only works within
+    # one region.
+    region: singapore
+    # BullMQ requires noeviction: an evicted key would silently lose a job.
+    maxmemoryPolicy: noeviction
+    # No public access: only services in this workspace reach it, over the private network.
+    ipAllowList: []
+
   - type: web
     name: campuspool-api
     runtime: node
@@ -25,6 +39,12 @@ services:
         value: brevo
       - key: FIREBASE_SERVICE_ACCOUNT_PATH
         value: /etc/secrets/firebase-service-account.json
+      # The Key Value instance's internal URL, filled in by Render: never typed by hand.
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: campuspool-redis
+          property: connectionString
       # Neon production project: pooled (-pooler) URL for the app, direct URL for migrations.
       - key: DATABASE_URL
         sync: false

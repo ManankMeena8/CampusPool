@@ -1,7 +1,8 @@
 # Deploying the API to Render (free plan)
 
 The API runs as one Render **free web service** in **Singapore**, next to a separate production
-database in **Neon, AWS ap-southeast-1 (Singapore)**. Render builds it from
+database in **Neon, AWS ap-southeast-1 (Singapore)** and a free Render **Key Value** instance
+(Render's Redis-compatible store) that holds the notification queue. Render builds both from
 [render.yaml](../render.yaml) at the repo root. OTP emails go through **Brevo's HTTP API**,
 because Render's free web services block outbound SMTP (ports 25, 465 and 587).
 
@@ -15,6 +16,9 @@ What Render runs (from `render.yaml`):
 | Build        | `npm ci && npx prisma generate` (in `backend/`)             |
 | Start        | `node scripts/migrate-deploy.js && exec node src/server.js` |
 | Health check | `GET /health` (checks the database and PostGIS)             |
+
+`/health` also reports `"redis"`, but only the database decides its status: a Redis outage delays
+notifications and must not make Render restart the service.
 
 The free plan has no pre-deploy command, so `prisma migrate deploy` runs at the start of every
 boot. That is safe with one instance:
@@ -107,8 +111,9 @@ downloaded JSON stays outside the repo. You upload it to Render in step 5.
 
 1. Push the branch containing `render.yaml` to GitHub.
 2. In the Render dashboard, click **New → Blueprint**, connect the repo, and select the branch.
-   Render reads `render.yaml` and shows one web service, `campuspool-api`, region **Singapore**
-   (or Ohio with the fallback above), plan **Free**.
+   Render reads `render.yaml` and shows two resources, both plan **Free**: the web service
+   `campuspool-api` and the Key Value instance `campuspool-redis`, region **Singapore** (or Ohio
+   with the fallback above; change **both** regions, they must match).
 3. Render asks for every `sync: false` variable. **This prompt appears only at creation**: a
    variable added to `render.yaml` later must be added by hand in **Environment**. Fill them in
    from the table below.
@@ -121,27 +126,62 @@ the service page because the name is taken. If it differs, change `CORS_ORIGIN` 
 
 ### Environment variables
 
-| Variable                                           | What it is                                               | Where to get it                                              | Differs from dev?            |
-| -------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------- |
-| `NODE_ENV`                                         | `production`                                             | Set in `render.yaml`                                         | **Yes**                      |
-| `NODE_VERSION`                                     | `20` (Render's Node version)                             | Set in `render.yaml`                                         | No                           |
-| `PORT`                                             | Port to listen on                                        | Set by Render (10000). **Don't set it**                      | n/a                          |
-| `DATABASE_URL`                                     | Neon **pooled** URL (`-pooler` host), used by the app    | Neon production project → Connect, pooling on                | **Yes**, a separate database |
-| `DIRECT_URL`                                       | Neon **direct** URL, used only for migrations            | Neon production project → Connect, pooling off               | **Yes**                      |
-| `JWT_ACCESS_SECRET`                                | Signs access tokens and hashes OTP codes; 32+ characters | The `node -e` one-liner above                                | **Yes, newly generated**     |
-| `ALLOWED_EMAIL_DOMAIN`                             | Only `@<domain>` emails can sign up                      | `nsut.ac.in`, the app's default                              | No (must match the app)      |
-| `EMAIL_PROVIDER`                                   | `brevo`                                                  | Set in `render.yaml`                                         | **Yes** (dev uses `smtp`)    |
-| `BREVO_API_KEY`                                    | Brevo API key                                            | Brevo → SMTP & API → API Keys                                | Production only              |
-| `MAIL_FROM`                                        | `CampusPool <verified sender>`                           | The sender verified in Brevo                                 | Usually                      |
-| `CORS_ORIGIN`                                      | The service's own URL, no trailing slash                 | The service page, e.g. `https://campuspool-api.onrender.com` | **Yes** (dev: `*`)           |
-| `FIREBASE_SERVICE_ACCOUNT_PATH`                    | `/etc/secrets/firebase-service-account.json`             | Set in `render.yaml`; the file is a Secret File (step 5)     | **Yes** (path)               |
-| `ROUTING_BASE_URL`                                 | OSRM server                                              | Leave unset: defaults to the public demo server              | No                           |
-| `TRUST_PROXY_HOPS`                                 | Proxies in front of the API, for the client IP           | Leave unset (1) unless step 7 shows otherwise                | Production only              |
-| `DEBUG_CLIENT_IP`                                  | `1` turns on `GET /debug/client-ip`                      | Leave unset; only for step 7                                 | Production only              |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | Gmail SMTP for local development                         | Not used on Render                                           | Dev only                     |
+| Variable                                           | What it is                                               | Where to get it                                                         | Differs from dev?            |
+| -------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------- |
+| `NODE_ENV`                                         | `production`                                             | Set in `render.yaml`                                                    | **Yes**                      |
+| `NODE_VERSION`                                     | `20` (Render's Node version)                             | Set in `render.yaml`                                                    | No                           |
+| `PORT`                                             | Port to listen on                                        | Set by Render (10000). **Don't set it**                                 | n/a                          |
+| `DATABASE_URL`                                     | Neon **pooled** URL (`-pooler` host), used by the app    | Neon production project → Connect, pooling on                           | **Yes**, a separate database |
+| `DIRECT_URL`                                       | Neon **direct** URL, used only for migrations            | Neon production project → Connect, pooling off                          | **Yes**                      |
+| `JWT_ACCESS_SECRET`                                | Signs access tokens and hashes OTP codes; 32+ characters | The `node -e` one-liner above                                           | **Yes, newly generated**     |
+| `ALLOWED_EMAIL_DOMAIN`                             | Only `@<domain>` emails can sign up                      | `nsut.ac.in`, the app's default                                         | No (must match the app)      |
+| `EMAIL_PROVIDER`                                   | `brevo`                                                  | Set in `render.yaml`                                                    | **Yes** (dev uses `smtp`)    |
+| `BREVO_API_KEY`                                    | Brevo API key                                            | Brevo → SMTP & API → API Keys                                           | Production only              |
+| `MAIL_FROM`                                        | `CampusPool <verified sender>`                           | The sender verified in Brevo                                            | Usually                      |
+| `CORS_ORIGIN`                                      | The service's own URL, no trailing slash                 | The service page, e.g. `https://campuspool-api.onrender.com`            | **Yes** (dev: `*`)           |
+| `FIREBASE_SERVICE_ACCOUNT_PATH`                    | `/etc/secrets/firebase-service-account.json`             | Set in `render.yaml`; the file is a Secret File (step 5)                | **Yes** (path)               |
+| `REDIS_URL`                                        | The Key Value instance's **internal** URL                | Filled in by Render (`fromService` in `render.yaml`). **Don't type it** | **Yes** (dev: local Docker)  |
+| `ENABLE_JOBS`                                      | `0` stops the outbox relay and the notification worker   | Leave unset (on)                                                        | No                           |
+| `ROUTING_BASE_URL`                                 | OSRM server                                              | Leave unset: defaults to the public demo server                         | No                           |
+| `TRUST_PROXY_HOPS`                                 | Proxies in front of the API, for the client IP           | Leave unset (1) unless step 7 shows otherwise                           | Production only              |
+| `DEBUG_CLIENT_IP`                                  | `1` turns on `GET /debug/client-ip`                      | Leave unset; only for step 7                                            | Production only              |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | Gmail SMTP for local development                         | Not used on Render                                                      | Dev only                     |
 
 The API checks these at startup and exits with a list of the variable names that are missing or
 invalid, never their values. The list appears in the Render deploy log.
+
+### The Key Value instance (Redis for notifications)
+
+`render.yaml` defines it, so there is nothing to create by hand:
+
+```yaml
+- type: keyvalue
+  name: campuspool-redis
+  plan: free
+  region: singapore
+  maxmemoryPolicy: noeviction
+  ipAllowList: []
+```
+
+- **Creating it:** applying the Blueprint (step 2 above) creates it together with the web
+  service. On a deployment that already exists, **syncing the Blueprint creates the new
+  instance**: see [Adding the Key Value instance](#adding-the-key-value-instance-to-an-existing-deployment).
+- **The internal URL:** the web service's `REDIS_URL` comes from the instance's
+  `connectionString`, which is its internal URL, like `redis://red-xxxxxxxxxxxxxxxxxxxx:6379`. It
+  works only between services of the same workspace **in the same region**, over Render's
+  private network, with no TLS and no password. Nobody types or copies it, and it never appears
+  in the repo. You can see it on the instance's page under **Connect → Internal**.
+- **No public access:** `ipAllowList: []` blocks every connection from the internet. Don't add
+  addresses to it; nothing outside Render needs this instance.
+- **`maxmemoryPolicy: noeviction`** is required by BullMQ: with any other policy Redis may
+  delete a job's key under memory pressure, silently losing it. The free plan has 25 MB;
+  finished jobs are removed by age and count, so the queue stays far below that.
+- **A free Key Value instance loses all its data when it restarts** (it has no disk
+  persistence), and Render may restart it for maintenance. That is safe here, because the queue
+  is not the source of truth: every notification is a row in the `Outbox` table in Postgres,
+  written in the same transaction as the booking or ride change. Jobs that vanish with a
+  restart are re-enqueued from those rows after 5 minutes, and a notification that was already
+  sent is never sent again (its row is `SENT`). The only effect of a restart is a delay.
 
 `CORS_ORIGIN` doesn't affect the app: Android sends no `Origin` header, and Socket.io accepts the
 app's websocket connection with this setting (covered by `backend/tests/production.test.js`).
@@ -174,8 +214,12 @@ $api = "https://campuspool-api.onrender.com"
 
 ```powershell
 curl.exe -s "$api/health"
-# {"status":"ok","db":"ok"}
+# {"status":"ok","db":"ok","redis":"ok"}
 ```
+
+`"redis":"down"` with a 200 means the API can't reach the Key Value instance: check that it
+shows **Available**, that both services are in the same region, and that `REDIS_URL` on the web
+service is the linked value (not typed by hand). Notifications wait in the outbox meanwhile.
 
 **Sign up with a real NSUT email and receive the OTP:**
 
@@ -237,6 +281,19 @@ Remove-Item Env:TOKEN, Env:RIDE, Env:API
 
 Expected output: `connected`, then `{ ok: true, ride: { id: ..., status: 'OPEN' }, ... }`.
 
+**Check the notification outbox.** After the two-phone test (or any booking), from `backend/`
+with `DATABASE_URL` set to the production **pooled** URL for this one command:
+
+```powershell
+$env:DATABASE_URL = "<production pooled URL>"
+npm run outbox:status
+Remove-Item Env:DATABASE_URL
+```
+
+It only reads. Expect the rows under `SENT` (or `SKIPPED` for a recipient without a token), no
+`FAILED`, nothing `PENDING` for more than a few seconds while the service is awake, and
+`ENQUEUED for over 1 h: 0`.
+
 Clean up afterwards: cancel the test ride (`Invoke-RestMethod -Method Post
 "$api/rides/$($created.ride.id)/cancel" -Headers $auth`). Then run the two-phone test in
 [manual-e2e-test.md](manual-e2e-test.md) with the release APK.
@@ -287,9 +344,14 @@ Record the result (the hop count that worked) in the project notes.
   the server" in the app. Open sockets and live tracking also drop when the service sleeps or
   redeploys, and the app reconnects.
 - Last driver locations and rate-limit counters live in memory: a sleep or deploy forgets them.
+- **Notifications pause while the service sleeps.** The relay and the worker run inside the web
+  process, so nothing is sent while it is asleep. A request always wakes it, so a notification
+  for something a user just did is sent right away; what waits is a **retry** that was scheduled
+  for later when the service fell asleep. It goes out at the next wake, unless the event is no
+  longer true by then (it is checked again before sending).
 
 **Before a demo:** about 2 minutes ahead, run `curl.exe -s "$api/health"` (or open the URL in a
-browser) and wait for `{"status":"ok","db":"ok"}`. Then open the app. Any request keeps it awake
+browser) and wait for `{"status":"ok","db":"ok","redis":"ok"}`. Then open the app. Any request keeps it awake
 for another 15 minutes, so keep using it, or call `/health` again if there's a pause.
 
 Don't keep it awake around the clock with an external pinger: every `/health` also wakes the
@@ -323,3 +385,24 @@ flutter build apk --release --dart-define=APP_ENV=prod --dart-define=API_BASE_UR
   **Environment** by hand.
 - The API must stay a **single instance**: live locations, the location throttle and the rate
   limits live in the process's memory.
+
+### Adding the Key Value instance to an existing deployment
+
+The notification queue arrived after the first deploy, so an existing service gets its Redis on
+the next Blueprint sync:
+
+1. Push the commit that adds the `keyvalue` service and `REDIS_URL` to `render.yaml`. Render
+   syncs the Blueprint on the push (or click **Manual sync** on the Blueprint's page).
+   **Syncing the Blueprint creates the new instance** `campuspool-redis` and adds `REDIS_URL` to
+   `campuspool-api`, linked to it. No value is typed by hand, and nothing is prompted for.
+2. The same push deploys the new code, which requires `REDIS_URL` at startup.
+3. **If that first deploy fails** with `REDIS_URL: is required when NODE_ENV=production` in the
+   deploy log, the web service started building before the Key Value instance existed. Nothing
+   is broken: **the old version keeps serving** meanwhile. Wait until `campuspool-redis` shows
+   **Available** in the dashboard, check that **Environment** on `campuspool-api` now lists
+   `REDIS_URL`, then click **Manual Deploy → Deploy latest commit**.
+4. Check `curl.exe -s "$api/health"` for `"redis":"ok"`, and the log for the absence of
+   `[redis] ... connection lost`.
+
+The migration that adds the `Outbox` table only adds a table, so the old version runs unchanged
+against the migrated database while the new one starts.
