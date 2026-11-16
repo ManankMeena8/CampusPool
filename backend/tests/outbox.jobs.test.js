@@ -292,6 +292,34 @@ describe('failures', () => {
     // A relay that runs again leaves a finished row alone.
     expect(await makeRelay({ recoverAfterMs: 0 }).tick()).toBe(0);
   });
+
+  it('a database error reaches BullMQ as its code only, and is retried', async () => {
+    const { id } = await startedRide();
+    const messaging = fakeMessaging();
+    // The worker's own queries fail the way Prisma fails: a message quoting the call and host.
+    const dbError = Object.assign(
+      new Error("Can't reach database server at `SECRET-HOST.neon.tech:5432`"),
+      { name: 'PrismaClientKnownRequestError', code: 'P1001' },
+    );
+    const brokenDb = {
+      outbox: { findUnique: jest.fn().mockRejectedValue(dbError), updateMany: jest.fn() },
+    };
+    startWorker(messaging, { db: brokenDb });
+
+    await makeRelay().tick();
+
+    await waitFor(
+      async () => (await (await queue.getJob(id)).getState()) === 'failed',
+      'the job to run out of attempts',
+    );
+    expect(brokenDb.outbox.findUnique).toHaveBeenCalledTimes(FAST_RETRIES.attempts);
+    const job = await queue.getJob(id);
+    expect(job.failedReason).toBe('P1001');
+    expect(JSON.stringify(job.stacktrace)).not.toContain('SECRET');
+    expect(messaging.send).not.toHaveBeenCalled();
+    // The outcome could not be written: the row is left for recovery and outbox:status.
+    expect((await row(id)).status).toBe('ENQUEUED');
+  });
 });
 
 describe('nothing is sent twice', () => {

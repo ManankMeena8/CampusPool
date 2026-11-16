@@ -6,6 +6,9 @@ const { errorCode, PermanentSendError } = require('../services/notification.serv
 // and died before marking the row ENQUEUED.
 const UNFINISHED = ['PENDING', 'ENQUEUED'];
 
+/** What the worker hands BullMQ instead of an error: BullMQ keeps message and stack in Redis. */
+const codeOnly = (code) => Object.assign(new Error(code), { code });
+
 /**
  * The BullMQ worker that sends notification jobs. A job's id is its outbox row's id.
  *
@@ -56,12 +59,23 @@ function createNotificationWorker({ connection, db, deliver, concurrency = 5, pr
           data: { lastError: code },
         });
       }
-      throw new Error(code);
+      throw codeOnly(code);
     }
     await finish(id, outcome.status, outcome.reason ?? null);
   }
 
-  const worker = new Worker(QUEUE_NAME, handle, {
+  // The database calls above can throw too (Prisma's messages quote the call, its arguments and
+  // the host): those reach BullMQ as their code, and are retried like any temporary failure.
+  async function processJob(job) {
+    try {
+      await handle(job);
+    } catch (err) {
+      if (err instanceof UnrecoverableError) throw err;
+      throw codeOnly(errorCode(err));
+    }
+  }
+
+  const worker = new Worker(QUEUE_NAME, processJob, {
     connection,
     concurrency,
     ...(prefix && { prefix }),
