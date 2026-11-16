@@ -23,14 +23,15 @@ const signedIn = AuthAuthenticated(
 void main() {
   group('routeForPush', () {
     test('booking and ride events open the ride', () {
+      // The API's event names (backend/src/lib/notificationTypes.js).
       for (final type in [
-        'bookingRequested',
-        'bookingAccepted',
-        'bookingRejected',
-        'bookingCancelled',
-        'bookingAutoRejected',
-        'rideCancelled',
-        'someFutureEvent',
+        'booking.requested',
+        'booking.accepted',
+        'booking.rejected',
+        'booking.cancelled',
+        'booking.autoRejected',
+        'ride.cancelled',
+        'some.futureEvent',
       ]) {
         expect(
           routeForPush({'type': type, 'rideId': 'r1', 'bookingId': 'b1'}),
@@ -42,18 +43,88 @@ void main() {
 
     test('a started ride opens the live map', () {
       expect(
-        routeForPush({'type': 'rideStarted', 'rideId': 'r1'}),
+        routeForPush({'type': 'ride.started', 'rideId': 'r1'}),
         '/rides/r1/live',
       );
     });
 
+    test('the outbox id does not change where a tap goes', () {
+      expect(
+        routeForPush({
+          'type': 'ride.started',
+          'rideId': 'r1',
+          'outboxId': 'o1',
+        }),
+        '/rides/r1/live',
+      );
+      expect(
+        routeForPush({
+          'type': 'booking.accepted',
+          'rideId': 'r1',
+          'bookingId': 'b1',
+          'outboxId': 'o1',
+        }),
+        '/rides/r1',
+      );
+    });
+
     test('no ride id, no route', () {
-      expect(routeForPush({'type': 'bookingAccepted'}), isNull);
-      expect(routeForPush({'type': 'bookingAccepted', 'rideId': ''}), isNull);
+      expect(routeForPush({'type': 'booking.accepted'}), isNull);
+      expect(routeForPush({'type': 'booking.accepted', 'rideId': ''}), isNull);
     });
 
     test('the ride id is encoded', () {
       expect(routeForPush({'rideId': 'a/b'}), '/rides/a%2Fb');
+    });
+  });
+
+  group('notificationSlotFor', () {
+    const accepted = {
+      'type': 'booking.accepted',
+      'rideId': 'r1',
+      'bookingId': 'b1',
+    };
+
+    test('a duplicate delivery lands in the same slot, so it replaces', () {
+      final first = notificationSlotFor({...accepted, 'outboxId': 'o1'});
+      final again = notificationSlotFor({
+        ...accepted,
+        'outboxId': 'o1',
+      }, now: DateTime(2030));
+      expect(first, again);
+    });
+
+    test('the slot is the one FCM uses for a tagged background '
+        'notification: (tag, 0)', () {
+      expect(notificationSlotFor({...accepted, 'outboxId': 'o1'}), (
+        id: 0,
+        tag: 'o1',
+      ));
+    });
+
+    test('different notifications get different slots', () {
+      expect(
+        notificationSlotFor({...accepted, 'outboxId': 'o1'}),
+        isNot(notificationSlotFor({...accepted, 'outboxId': 'o2'})),
+      );
+    });
+
+    test('without an outbox id, each message gets its own untagged slot', () {
+      final a = notificationSlotFor(accepted, now: DateTime(2030, 1, 1, 9));
+      final b = notificationSlotFor(
+        accepted,
+        now: DateTime(2030, 1, 1, 9, 0, 1),
+      );
+      final empty = notificationSlotFor({
+        ...accepted,
+        'outboxId': '',
+      }, now: DateTime(2030, 1, 1, 9, 0, 2));
+      expect(a.tag, isNull);
+      expect(empty.tag, isNull);
+      expect({a.id, b.id, empty.id}, hasLength(3));
+      for (final slot in [a, b, empty]) {
+        expect(slot.id, inInclusiveRange(0, 0x7fffffff));
+      }
     });
   });
 
@@ -74,7 +145,7 @@ void main() {
       );
     });
 
-    const accepted = {'type': 'bookingAccepted', 'rideId': 'r1'};
+    const accepted = {'type': 'booking.accepted', 'rideId': 'r1'};
 
     test('a launch tap waits for the session, then replaces the splash', () {
       navigator.onAuthChanged(const AuthInitializing());
@@ -99,7 +170,7 @@ void main() {
     test('a tap while using the app opens the ride on top', () {
       path = Routes.postRide;
       navigator.onAuthChanged(signedIn);
-      navigator.open({'type': 'rideStarted', 'rideId': 'r2'});
+      navigator.open({'type': 'ride.started', 'rideId': 'r2'});
 
       expect(pushed, ['/rides/r2/live']);
       expect(gone, isEmpty);
@@ -116,7 +187,7 @@ void main() {
 
     test('a notification without a ride is ignored', () {
       navigator.onAuthChanged(signedIn);
-      navigator.open({'type': 'bookingAccepted'});
+      navigator.open({'type': 'booking.accepted'});
 
       expect(gone, isEmpty);
       expect(pushed, isEmpty);
@@ -163,7 +234,7 @@ void main() {
     test(
       'the notification that launched the app opens after sign-in',
       () async {
-        messaging.launchNotification = {'type': 'rideStarted', 'rideId': 'r1'};
+        messaging.launchNotification = {'type': 'ride.started', 'rideId': 'r1'};
         container.read(pushNavigatorProvider);
         await pumpEventQueue();
         expect(location(), Routes.splash);
@@ -177,7 +248,7 @@ void main() {
       container.read(pushNavigatorProvider);
       setAuth(signedIn);
 
-      messaging.tap({'type': 'bookingRequested', 'rideId': 'r9'});
+      messaging.tap({'type': 'booking.requested', 'rideId': 'r9'});
       await pumpEventQueue();
       expect(location(), '/rides/r9');
     });

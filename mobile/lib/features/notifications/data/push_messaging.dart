@@ -15,8 +15,28 @@ enum PushPermission {
   unavailable,
 }
 
-/// A notification's data: `type`, `rideId` and sometimes `bookingId`, all strings.
+/// A notification's data: `type`, `rideId`, `outboxId` and sometimes `bookingId`, all strings.
 typedef PushData = Map<String, String>;
+
+/// Where Android files a notification: one with the same [tag] and [id] replaces the other.
+typedef NotificationSlot = ({int id, String? tag});
+
+/// The slot for a message the app shows itself, in the foreground.
+///
+/// The API may deliver a notification more than once (it retries, and a retry can follow a send
+/// that did arrive). Every delivery carries the same `outboxId`, which the API also sets as the
+/// Android tag of the notification the system shows while the app is in the background. FCM
+/// files those under (tag, 0), so using the same pair here makes a duplicate replace the first
+/// one whichever way each copy arrived, instead of stacking.
+///
+/// A message without an `outboxId` (an older API) gets a slot of its own, from the time.
+NotificationSlot notificationSlotFor(PushData data, {DateTime? now}) {
+  final outboxId = data['outboxId'];
+  if (outboxId != null && outboxId.isNotEmpty) return (id: 0, tag: outboxId);
+  // Unique enough: two notifications in the same millisecond are not expected.
+  final time = (now ?? DateTime.now()).millisecondsSinceEpoch;
+  return (id: time & 0x7fffffff, tag: null);
+}
 
 /// The Firebase Cloud Messaging calls the app makes, behind a seam for tests.
 abstract interface class PushMessaging {
@@ -91,10 +111,11 @@ class FirebasePushMessaging implements PushMessaging {
   Future<void> _showInForeground(RemoteMessage message) async {
     final notification = message.notification;
     if (notification == null) return;
+    final data = _dataOf(message);
+    final slot = notificationSlotFor(data);
     try {
       await _local.show(
-        // Unique enough: two notifications in the same millisecond are not expected.
-        id: DateTime.now().millisecondsSinceEpoch & 0x7fffffff,
+        id: slot.id,
         title: notification.title,
         body: notification.body,
         notificationDetails: NotificationDetails(
@@ -104,9 +125,10 @@ class FirebasePushMessaging implements PushMessaging {
             channelDescription: rideUpdatesChannel.description,
             importance: Importance.high,
             priority: Priority.high,
+            tag: slot.tag,
           ),
         ),
-        payload: jsonEncode(_dataOf(message)),
+        payload: jsonEncode(data),
       );
     } catch (e) {
       debugPrint('Could not show a notification: $e');
