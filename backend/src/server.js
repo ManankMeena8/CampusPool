@@ -4,6 +4,7 @@ const { env } = require('./config/env');
 const prisma = require('./lib/prisma');
 const { createShutdown } = require('./lib/shutdown');
 const { attachRealtime } = require('./realtime');
+const { startJobs } = require('./jobs');
 const notifications = require('./services/notification.service');
 
 const server = http.createServer(app);
@@ -20,6 +21,9 @@ server.listen(env.PORT, '0.0.0.0', () => {
   }
 });
 
-const shutdown = createShutdown({ io, prisma });
+// The outbox relay and the notification worker run in this process (ENABLE_JOBS).
+const jobs = startJobs();
+
+const shutdown = createShutdown({ io, prisma, ...jobs });
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));

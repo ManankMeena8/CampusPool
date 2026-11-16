@@ -1,11 +1,13 @@
 const fs = require('fs');
 const { env } = require('../config/env');
 const prisma = require('../lib/prisma');
+const T = require('../lib/notificationTypes');
 
 /*
- * Push notifications through Firebase Cloud Messaging, one function per event. Callers run them
- * with runInBackground once their transaction has committed, and pass the recipients' user ids;
- * texts are built here. Without credentials (always in tests) nothing is looked up or sent.
+ * Push notifications through Firebase Cloud Messaging. deliver() sends one outbox row to its
+ * one recipient; the notification worker (src/jobs/notificationWorker.js) calls it and records
+ * the outcome. Texts are built here, at send time. Without credentials (always in tests, unless
+ * a test passes its own client) nothing is looked up or sent.
  */
 
 // The token is gone for good: the app was uninstalled, or the token was never valid.
@@ -13,6 +15,33 @@ const INVALID_TOKEN_CODES = new Set([
   'messaging/registration-token-not-registered',
   'messaging/invalid-registration-token',
 ]);
+// Retrying cannot help. invalid-argument is also what a malformed message gets, so it does not
+// clear the token: a bug on our side must not wipe good tokens.
+const PERMANENT_CODES = new Set([...INVALID_TOKEN_CODES, 'messaging/invalid-argument']);
+
+/** FCM refused the message for good: do not retry. `code` is safe to store and log. */
+class PermanentSendError extends Error {
+  constructor(code) {
+    super(code);
+    this.name = 'PermanentSendError';
+    this.code = code;
+  }
+}
+
+/** The send failed in a way that may pass (unavailable, timeout, internal, quota): retry. */
+class TemporarySendError extends Error {
+  constructor(code) {
+    super(code);
+    this.name = 'TemporarySendError';
+    this.code = code;
+  }
+}
+
+/** A short code for an error, never its message (which could quote a token or a URL). */
+function errorCode(err) {
+  const code = err?.code ?? err?.errorInfo?.code ?? err?.name ?? 'unknown';
+  return String(code).slice(0, 100);
+}
 
 function log(message, config = env) {
   if (config.NODE_ENV !== 'test') console.log(`[notifications] ${message}`);
@@ -52,6 +81,92 @@ function loadMessaging(config = env) {
   }
 }
 
+const seatCount = (n) => `${n} seat${n === 1 ? '' : 's'}`;
+
+/*
+ * One entry per event:
+ *   about    which record the message describes, loaded when sending
+ *   current  whether the event is still true for that record; if not, nothing is sent (a retry
+ *            or a late job must not announce something that has since been undone)
+ *   text     { title, body } from the record and the row's payload
+ */
+const EVENTS = {
+  /** To the driver: a rider asked for seats. */
+  [T.bookingRequested]: {
+    about: 'booking',
+    current: (b) => b.status === 'PENDING',
+    text: (b) => ({
+      title: 'New ride request',
+      body: `${b.rider.name} asked for ${seatCount(b.seats)} on your ride to ${b.ride.endAddress}.`,
+    }),
+  },
+  /** To the rider: the driver accepted their request. */
+  [T.bookingAccepted]: {
+    about: 'booking',
+    current: (b) => b.status === 'ACCEPTED',
+    text: (b) => ({
+      title: 'Request accepted',
+      body: `${b.ride.driver.name} accepted your request for the ride to ${b.ride.endAddress}.`,
+    }),
+  },
+  /** To the rider: the driver rejected their request. */
+  [T.bookingRejected]: {
+    about: 'booking',
+    current: (b) => b.status === 'REJECTED',
+    text: (b) => ({
+      title: 'Request declined',
+      body: `Your request for the ride to ${b.ride.endAddress} was declined.`,
+    }),
+  },
+  /** To the driver: a rider cancelled a PENDING or ACCEPTED booking. */
+  [T.bookingCancelled]: {
+    about: 'booking',
+    current: (b) => b.status === 'CANCELLED',
+    text: (b, { wasAccepted }) => ({
+      title: 'Booking cancelled',
+      body:
+        `${b.rider.name} cancelled their booking on your ride to ${b.ride.endAddress}.` +
+        (wasAccepted ? ` ${seatCount(b.seats)} free again.` : ''),
+    }),
+  },
+  /** To the riders whose PENDING requests were rejected when the ride started. */
+  [T.bookingAutoRejected]: {
+    about: 'ride',
+    current: (r) => ['IN_PROGRESS', 'COMPLETED'].includes(r.status),
+    text: (r) => ({
+      title: 'Request not accepted',
+      body: `The ride to ${r.endAddress} has started without accepting your request.`,
+    }),
+  },
+  /** To the riders whose PENDING or ACCEPTED bookings the driver's cancel ended. */
+  [T.rideCancelled]: {
+    about: 'ride',
+    current: (r) => r.status === 'CANCELLED',
+    text: (r) => ({
+      title: 'Ride cancelled',
+      body: `${r.driver.name} cancelled the ride to ${r.endAddress}.`,
+    }),
+  },
+  /** To the riders with an ACCEPTED booking. */
+  [T.rideStarted]: {
+    about: 'ride',
+    current: (r) => r.status === 'IN_PROGRESS',
+    text: (r) => ({
+      title: 'Ride started',
+      body: `${r.driver.name} has started the ride to ${r.endAddress}. Follow it live in the app.`,
+    }),
+  },
+};
+
+const RIDE_FIELDS = {
+  id: true,
+  status: true,
+  endAddress: true,
+  driver: { select: { name: true } },
+};
+
+const skipped = (reason) => ({ status: 'SKIPPED', reason });
+
 /** The notification functions, over `getMessaging` (null when disabled) and the database. */
 function createNotifications({ getMessaging, db }) {
   let messaging;
@@ -60,173 +175,82 @@ function createNotifications({ getMessaging, db }) {
     return messaging;
   };
 
-  /**
-   * Sends to every recipient with a token. `build` runs only when sending is enabled, so a
-   * disabled service never touches the database; it returns the message, or null to send none.
-   * Tokens FCM reports as invalid are cleared, unless the user registered a new one meanwhile.
-   */
-  async function send(type, userIds, build) {
-    if (userIds.length === 0) return;
-    const fcm = client();
-    if (!fcm) {
-      log(`not configured; skipped ${type} for ${userIds.length} user(s)`);
-      return;
+  /** The record the event is about and the message's ids, or null when it no longer exists. */
+  async function load(about, payload) {
+    if (about === 'ride') {
+      if (!payload.rideId) return null;
+      const ride = await db.ride.findUnique({ where: { id: payload.rideId }, select: RIDE_FIELDS });
+      return ride && { record: ride, ids: { rideId: ride.id } };
     }
-    const content = await build();
-    if (!content) return;
-    const users = await db.user.findMany({
-      where: { id: { in: userIds }, fcmToken: { not: null } },
-      select: { id: true, fcmToken: true },
-    });
-    if (users.length === 0) return;
-
-    const data = { type, ...content.data };
-    const { responses } = await fcm.sendEach(
-      users.map((u) => ({
-        token: u.fcmToken,
-        notification: { title: content.title, body: content.body },
-        data,
-        android: { priority: 'high' },
-      })),
-    );
-    await Promise.all(
-      responses.map(async ({ success, error }, i) => {
-        if (success) return;
-        const { id, fcmToken } = users[i];
-        if (INVALID_TOKEN_CODES.has(error?.code)) {
-          await db.user.updateMany({ where: { id, fcmToken }, data: { fcmToken: null } });
-          log(`cleared an invalid token of user ${id}`);
-        } else {
-          console.error(`[notifications] ${type} to user ${id} failed: ${error?.code ?? error}`);
-        }
-      }),
-    );
-  }
-
-  const findRide = (id) =>
-    db.ride.findUnique({
-      where: { id },
-      select: { id: true, endAddress: true, driver: { select: { name: true } } },
-    });
-
-  const findBooking = (id) =>
-    db.booking.findUnique({
-      where: { id },
+    if (!payload.bookingId) return null;
+    const booking = await db.booking.findUnique({
+      where: { id: payload.bookingId },
       select: {
         id: true,
+        status: true,
         seats: true,
         rider: { select: { name: true } },
-        ride: { select: { id: true, endAddress: true, driver: { select: { name: true } } } },
+        ride: { select: RIDE_FIELDS },
       },
     });
+    return booking && { record: booking, ids: { rideId: booking.ride.id, bookingId: booking.id } };
+  }
 
-  const seatCount = (n) => `${n} seat${n === 1 ? '' : 's'}`;
+  /**
+   * Sends the outbox `row` to its recipient. Resolves to { status: 'SENT' }, or to
+   * { status: 'SKIPPED', reason } when there is nothing to send: sending is not configured, the
+   * record is gone, the event is no longer true, or the recipient has no token (looked up now,
+   * not when the row was written). Throws PermanentSendError when FCM refuses for good (an
+   * invalid token is cleared first, unless the user registered a new one meanwhile) and
+   * TemporarySendError for anything worth retrying.
+   */
+  async function deliver(row) {
+    const fcm = client();
+    if (!fcm) return skipped('not-configured');
+    const event = EVENTS[row.type];
+    if (!event) return skipped('unknown-type');
 
-  /** A message about one booking; `text(booking)` gives { title, body }. */
-  const aboutBooking = (bookingId, text) => async () => {
-    const booking = await findBooking(bookingId);
-    if (!booking) return null;
-    return { ...text(booking), data: { rideId: booking.ride.id, bookingId: booking.id } };
-  };
+    const payload = row.payload ?? {};
+    const found = await load(event.about, payload);
+    if (!found) return skipped('gone');
+    if (!event.current(found.record)) return skipped('stale');
 
-  /** A message about a ride; `text(ride)` gives { title, body }. */
-  const aboutRide = (rideId, text) => async () => {
-    const ride = await findRide(rideId);
-    if (!ride) return null;
-    return { ...text(ride), data: { rideId: ride.id } };
-  };
+    const user = await db.user.findUnique({
+      where: { id: row.recipientUserId },
+      select: { id: true, fcmToken: true },
+    });
+    if (!user?.fcmToken) return skipped('no-token');
+
+    try {
+      await fcm.send({
+        token: user.fcmToken,
+        notification: event.text(found.record, payload),
+        // The app shows foreground messages itself and uses outboxId as the tag too, so a
+        // duplicate delivery replaces the first notification instead of stacking.
+        data: { type: row.type, ...found.ids, outboxId: row.id },
+        android: { priority: 'high', notification: { tag: row.id } },
+      });
+    } catch (err) {
+      const code = errorCode(err);
+      if (INVALID_TOKEN_CODES.has(code)) {
+        await db.user.updateMany({
+          where: { id: user.id, fcmToken: user.fcmToken },
+          data: { fcmToken: null },
+        });
+        log(`cleared an invalid token of user ${user.id}`);
+      }
+      if (PERMANENT_CODES.has(code)) throw new PermanentSendError(code);
+      throw new TemporarySendError(code);
+    }
+    return { status: 'SENT' };
+  }
 
   return {
     /** Loads the credentials now (server start), so a bad path is logged at boot. */
     enabled() {
       return Boolean(client());
     },
-
-    /** To the driver: a rider asked for seats. */
-    bookingRequested({ bookingId, driverId }) {
-      return send(
-        'booking.requested',
-        [driverId],
-        aboutBooking(bookingId, (b) => ({
-          title: 'New ride request',
-          body: `${b.rider.name} asked for ${seatCount(b.seats)} on your ride to ${b.ride.endAddress}.`,
-        })),
-      );
-    },
-
-    /** To the rider: the driver accepted their request. */
-    bookingAccepted({ bookingId, riderId }) {
-      return send(
-        'booking.accepted',
-        [riderId],
-        aboutBooking(bookingId, (b) => ({
-          title: 'Request accepted',
-          body: `${b.ride.driver.name} accepted your request for the ride to ${b.ride.endAddress}.`,
-        })),
-      );
-    },
-
-    /** To the rider: the driver rejected their request. */
-    bookingRejected({ bookingId, riderId }) {
-      return send(
-        'booking.rejected',
-        [riderId],
-        aboutBooking(bookingId, (b) => ({
-          title: 'Request declined',
-          body: `Your request for the ride to ${b.ride.endAddress} was declined.`,
-        })),
-      );
-    },
-
-    /** To the driver: a rider cancelled a PENDING or ACCEPTED booking. */
-    bookingCancelled({ bookingId, driverId, wasAccepted }) {
-      return send(
-        'booking.cancelled',
-        [driverId],
-        aboutBooking(bookingId, (b) => ({
-          title: 'Booking cancelled',
-          body:
-            `${b.rider.name} cancelled their booking on your ride to ${b.ride.endAddress}.` +
-            (wasAccepted ? ` ${seatCount(b.seats)} free again.` : ''),
-        })),
-      );
-    },
-
-    /** To the riders whose PENDING requests were rejected when the ride started. */
-    bookingAutoRejected({ rideId, riderIds }) {
-      return send(
-        'booking.autoRejected',
-        riderIds,
-        aboutRide(rideId, (r) => ({
-          title: 'Request not accepted',
-          body: `The ride to ${r.endAddress} has started without accepting your request.`,
-        })),
-      );
-    },
-
-    /** To the riders whose PENDING or ACCEPTED bookings the driver's cancel ended. */
-    rideCancelled({ rideId, riderIds }) {
-      return send(
-        'ride.cancelled',
-        riderIds,
-        aboutRide(rideId, (r) => ({
-          title: 'Ride cancelled',
-          body: `${r.driver.name} cancelled the ride to ${r.endAddress}.`,
-        })),
-      );
-    },
-
-    /** To the riders with an ACCEPTED booking. */
-    rideStarted({ rideId, riderIds }) {
-      return send(
-        'ride.started',
-        riderIds,
-        aboutRide(rideId, (r) => ({
-          title: 'Ride started',
-          body: `${r.driver.name} has started the ride to ${r.endAddress}. Follow it live in the app.`,
-        })),
-      );
-    },
+    deliver,
   };
 }
 
@@ -234,4 +258,7 @@ module.exports = {
   ...createNotifications({ getMessaging: loadMessaging, db: prisma }),
   createNotifications,
   loadMessaging,
+  errorCode,
+  PermanentSendError,
+  TemporarySendError,
 };
