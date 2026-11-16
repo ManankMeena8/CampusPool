@@ -5,12 +5,17 @@ const AppError = require('../lib/AppError');
 const { BOOKING_ACTIONS, assertTransition } = require('../lib/bookingTransitions');
 const { findRidesByIds, geographyPoint, utc } = require('./ride.service');
 const realtime = require('../realtime/hub');
-const notify = require('../lib/notify');
+const outbox = require('./outbox.service');
+
+const T = outbox.NOTIFICATION_TYPES;
 
 /*
  * Lock order: every transaction that touches both a ride and its bookings locks the Ride row
  * first, then Booking rows. Ride cancel must update the ride before its bookings, so anything
  * else taking them the other way round could deadlock against it.
+ *
+ * Push notifications: each change inserts its outbox rows inside its own transaction, so a
+ * notification exists exactly when the change committed, and nudges the relay after the commit.
  */
 
 // Rows wait on each other's locks under contention (concurrent accepts on one ride).
@@ -46,7 +51,7 @@ async function lockRide(tx, rideId, mode = Prisma.sql`FOR UPDATE`) {
  */
 async function requestBooking(riderId, rideId, { pickup, drop, seats }) {
   const id = randomUUID();
-  const driverId = await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx) => {
     const ride = await lockRide(tx, rideId, Prisma.sql`FOR SHARE`);
     if (!ride) throw new AppError('RIDE_NOT_FOUND', 'Ride not found', 404);
     if (ride.driverId === riderId) {
@@ -83,9 +88,9 @@ async function requestBooking(riderId, rideId, { pickup, drop, seats }) {
         409,
       );
     }
-    return ride.driverId;
+    await outbox.enqueue(tx, T.bookingRequested, [ride.driverId], { rideId, bookingId: id });
   }, TX_OPTIONS);
-  notify('bookingRequested', { bookingId: id, driverId });
+  outbox.nudge();
   return findBookingById(id);
 }
 
@@ -171,6 +176,15 @@ async function applyTransition(db, action, id) {
   }
 }
 
+/** Queues a notification about `booking` for one user, inside the caller's transaction. */
+function notifyAbout(tx, type, booking, recipientUserId, extra = {}) {
+  return outbox.enqueue(tx, type, [recipientUserId], {
+    rideId: booking.rideId,
+    bookingId: booking.id,
+    ...extra,
+  });
+}
+
 /** Why the seat decrement matched no row, as the 409 to send. */
 async function seatUnavailable(tx, booking) {
   // Accepted (or cancelled) concurrently: report that, not the seats it took.
@@ -213,16 +227,23 @@ async function acceptBooking(driverId, id) {
       RETURNING "id"`;
     if (seated.length === 0) throw await seatUnavailable(tx, booking);
     await applyTransition(tx, 'accept', id);
+    await notifyAbout(tx, T.bookingAccepted, booking, booking.riderId);
   }, TX_OPTIONS);
-  notify('bookingAccepted', { bookingId: id, riderId: booking.riderId });
+  outbox.nudge();
   return findBookingById(id);
 }
 
-/** Rejects a PENDING booking. No seats were taken, so the ride is not touched (or locked). */
+/**
+ * Rejects a PENDING booking. No seats were taken, so the ride is not touched (or locked); the
+ * transaction is there for the outbox row.
+ */
 async function rejectBooking(driverId, id) {
   const booking = await loadForDriver(driverId, id, 'reject');
-  await applyTransition(prisma, 'reject', id);
-  notify('bookingRejected', { bookingId: id, riderId: booking.riderId });
+  await prisma.$transaction(async (tx) => {
+    await applyTransition(tx, 'reject', id);
+    await notifyAbout(tx, T.bookingRejected, booking, booking.riderId);
+  }, TX_OPTIONS);
+  outbox.nudge();
   return findBookingById(id);
 }
 
@@ -259,15 +280,14 @@ async function cancelBooking(riderId, id) {
             "updatedAt" = (now() AT TIME ZONE 'UTC')
         WHERE "id" = ${booking.rideId}`;
     }
+    await notifyAbout(tx, T.bookingCancelled, booking, booking.ride.driverId, {
+      wasAccepted: status === 'ACCEPTED',
+    });
     return status;
   }, TX_OPTIONS);
+  outbox.nudge();
   // After the commit: an ACCEPTED rider stops following the ride (others never could).
   if (previous === 'ACCEPTED') await realtime.riderRemoved(booking.rideId, riderId);
-  notify('bookingCancelled', {
-    bookingId: id,
-    driverId: booking.ride.driverId,
-    wasAccepted: previous === 'ACCEPTED',
-  });
   return findBookingById(id);
 }
 
