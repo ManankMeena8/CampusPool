@@ -10,9 +10,12 @@ doesn't match "Expect" is a bug: note the step number, both phones' screens and 
 - [ ] Windows firewall allows Node.js on private networks (or allow inbound TCP 3000).
 - [ ] `backend/.env` has working SMTP settings and `FIREBASE_SERVICE_ACCOUNT_PATH` pointing at the
       service account of the same Firebase project as `mobile/android/app/google-services.json`.
-- [ ] `cd backend && npm run migrate:deploy && npm run dev`. Expect the log to say
-      `push notifications are enabled`.
-- [ ] From a phone's browser, open `http://<laptop IP>:3000/health`. Expect a JSON response.
+- [ ] Docker Desktop is running and `backend/.env` has `REDIS_URL=redis://localhost:6380/1`
+      (the notification queue needs Redis).
+- [ ] `cd backend && npm run migrate:deploy && npm run db:test:up && npm run dev`. Expect the log
+      to say `push notifications are enabled`.
+- [ ] From a phone's browser, open `http://<laptop IP>:3000/health`. Expect a JSON response
+      with `"redis":"ok"`.
 - [ ] Install on both phones (USB debugging, one at a time):
       `cd mobile && flutter run --release --dart-define=API_BASE_URL=http://<laptop IP>:3000`.
       `APP_ENV` stays `dev`, which allows http (only `prod` requires https). The app and

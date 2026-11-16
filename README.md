@@ -5,12 +5,13 @@ search and request seats, and riders follow the driver live on a map once the ri
 
 | Part | Stack | Details |
 | --- | --- | --- |
-| [backend/](backend/) | Node.js 20, Express 4, Prisma 6, PostgreSQL + PostGIS (Neon), Socket.io, firebase-admin | [backend/README.md](backend/README.md) |
+| [backend/](backend/) | Node.js 20, Express 4, Prisma 6, PostgreSQL + PostGIS (Neon), Socket.io, BullMQ + Redis, firebase-admin | [backend/README.md](backend/README.md) |
 | [mobile/](mobile/) | Flutter (Android only), Riverpod, dio, go_router, flutter_map + OpenStreetMap, FCM | [mobile/README.md](mobile/README.md) |
 
 Only free services: OpenStreetMap tiles, the public OSRM demo server for routes, SMTP (local
 development) or Brevo's free HTTP API (production) for email codes, Firebase Cloud Messaging for
-push, and Render's free plan with Neon for hosting.
+push, and Render's free plan (a web service and Key Value, its Redis-compatible store) with Neon
+for hosting.
 
 ## Architecture
 
@@ -34,7 +35,9 @@ flowchart LR
     Svc --> Prisma["Prisma<br/>+ raw PostGIS SQL"]
     Svc --> Hub["hub.js<br/>(after commit)"]
     Hub --> RT
-    Svc --> Notify["notify → notification.service<br/>(after commit, background)"]
+    Svc -- "Outbox rows, in the<br/>same transaction" --> Prisma
+    Relay["outbox relay<br/>(every 1 s + nudge)"] -- "claims PENDING rows<br/>(SKIP LOCKED)" --> Prisma
+    Worker["notification worker<br/>(BullMQ, 5 at a time)"] -- "re-check, token lookup,<br/>SENT / SKIPPED / FAILED" --> Prisma
     RT --> Loc[("location store<br/>(in memory)")]
     Limits[("rate limits<br/>(in memory)")] --- Routes
   end
@@ -44,16 +47,23 @@ flowchart LR
   Prisma --> DB[("PostgreSQL + PostGIS<br/>(Neon)")]
   Svc -- "routes for new rides" --> OSRM["OSRM demo server"]
   Svc -- "OTP emails" --> SMTP["SMTP (dev) or<br/>Brevo HTTP API (Render)"]
-  Notify --> FCM["Firebase Cloud Messaging"]
+  Relay -- "one job per row,<br/>jobId = outbox id" --> Redis[("Redis: BullMQ queue<br/>(Render Key Value)")]
+  Redis -- "jobs, retried<br/>with backoff" --> Worker
+  Worker --> FCM["Firebase Cloud Messaging"]
   FCM --> Push
 ```
 
 - REST requests go `routes → validate → controller (asyncHandler) → service → Prisma`. Every
   error leaves through one handler as `{ "error": { "code", "message" } }`.
-- Socket events and push notifications fire only after the database transaction commits, and
-  never fail the request.
+- Socket events fire only after the database transaction commits, and never fail the request.
+- Push notifications use a **transactional outbox**: the service writes one `Outbox` row per
+  recipient in the same transaction as the change. A relay in the API process hands the rows to
+  a BullMQ queue in Redis, and a worker sends them through FCM with retries, so a Firebase
+  error, a restart or a crash does not lose a notification. Redis holds only the jobs; if it
+  loses them, the relay re-enqueues from Postgres. Details:
+  [backend/README.md](backend/README.md#push-notifications).
 - Live locations and rate-limit counters live in the API process's memory, so the API must run
-  as **one instance** until they move to Redis.
+  as **one instance** until they move to Redis too.
 - Coordinates are `(lng, lat)` in PostGIS and `(lat, lng)` in Flutter; the API takes and
   returns `{ lat, lng }` objects.
 
@@ -62,7 +72,8 @@ flowchart LR
 ### Prerequisites
 
 - Node.js 20+
-- Docker Desktop (for the backend tests only)
+- Docker Desktop, **running whenever the backend runs** (`npm run dev` as well as the tests):
+  it provides Redis, and the test database
 - Flutter SDK and Android Studio (Android SDK, an emulator or a phone with USB debugging)
 - A Neon project with PostGIS (or any PostgreSQL 16+ with PostGIS 3)
 - An SMTP account (for signup codes) and, for push, a Firebase project
@@ -74,6 +85,7 @@ cd backend
 npm install
 cp .env.example .env       # fill in the variables below
 npm run migrate:deploy     # apply migrations to the dev database
+npm run db:test:up         # Redis for the notification queue; Docker Desktop must be running
 npm run seed:dev -- --demo <password>   # optional: verified demo driver and rider + a ride
 npm run dev                # http://localhost:3000, check with GET /health
 ```
@@ -112,6 +124,8 @@ private networks.
 | `CORS_ORIGIN` | in production | `*` outside production | Comma-separated exact origins; `*` refused in production |
 | `ROUTING_BASE_URL` | no | `https://router.project-osrm.org` | OSRM server for ride routes |
 | `FIREBASE_SERVICE_ACCOUNT_PATH` | in production | | Absolute path to the Firebase service account JSON, **outside the repo**. Unset (outside production) or unreadable: pushes are skipped |
+| `REDIS_URL` | **yes** (outside production, not with `ENABLE_JOBS=0`) | | Redis for the notification queue. Locally `redis://localhost:6380/1`, the Docker container; on Render, set by `render.yaml` from the Key Value instance |
+| `ENABLE_JOBS` | no | on | `0` runs the API without the outbox relay and the notification worker: notifications wait in the `Outbox` table |
 | `TRUST_PROXY_HOPS` | no | `1` | Production only: proxies in front of the API, for the client IP |
 | `DEBUG_CLIENT_IP` | no | off | `1` turns on `GET /debug/client-ip`; turn it off right after checking |
 
@@ -120,7 +134,8 @@ Test-only (`backend/.env.test`, template in [backend/.env.test.example](backend/
 | Variable | Purpose |
 | --- | --- |
 | `TEST_DATABASE_URL` | Required under `NODE_ENV=test`; the local Docker database by default |
-| `ALLOW_REMOTE_TEST_DB` | Set to `1` to allow a non-local test database (the Neon test branch) |
+| `REDIS_URL` | Required; db 0 of the local Docker Redis (`redis://localhost:6380/0`), never the dev one |
+| `ALLOW_REMOTE_TEST_DB` | Set to `1` to allow a non-local test database (the Neon test branch) or Redis |
 | `RATE_LIMIT_IN_TESTS` | Set to `1` to turn rate limits on in tests (used by `tests/rateLimits.test.js`) |
 
 ### Mobile (`--dart-define`)
@@ -137,13 +152,14 @@ and the Firebase service account JSON.
 
 ## Deployment
 
-The API deploys to Render's free plan (region Singapore, next to a Neon production project in
-ap-southeast-1) from [render.yaml](render.yaml). Step by step, with the environment variables,
+The API deploys to Render's free plan (a web service and a Key Value instance in Singapore, next
+to a Neon production project in ap-southeast-1) from [render.yaml](render.yaml). Step by step, with the environment variables,
 smoke tests, cold starts and the release APK: [docs/deploy-render.md](docs/deploy-render.md).
 
 ## Running tests
 
-Backend (Jest + Supertest against a throwaway PostgreSQL 18 + PostGIS 3.6 in Docker, port 5433):
+Backend (Jest + Supertest against a throwaway PostgreSQL 18 + PostGIS 3.6 on port 5433 and
+Redis 7.4 on port 6380, both in Docker):
 
 ```sh
 cd backend
@@ -154,7 +170,7 @@ npm run lint
 npm run db:test:down
 ```
 
-Tests refuse to run against the dev database, or any remote database without
+Tests refuse to run against the dev database or the dev Redis, or any remote one without
 `ALLOW_REMOTE_TEST_DB=1`. See [backend/README.md](backend/README.md#tests) for the Neon test branch.
 
 Mobile:
@@ -211,3 +227,7 @@ Socket.io events (same server; the access token goes in the handshake's `auth.to
 | `ride:status` (server → client) | room members | |
 | `driver:location` (server → client) | room members except the driver | |
 
+## Known gaps
+
+Decided limits of the MVP (single instance, no pagination, no chat, notifications that wait
+while the free service sleeps, and more) are listed in [CLAUDE.md](CLAUDE.md#known-gaps-decided-not-forgotten).
