@@ -22,3 +22,18 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  # Redis for BullMQ: db 0 belongs to the Jest suite, db 1 to `npm run dev`. Port 6380 so it never
+  # clashes with another Redis. Nothing is persisted: the outbox table is the source of truth.
+  test-redis:
+    image: redis:7.4-alpine
+    container_name: campuspool-test-redis
+    ports:
+      - '6380:6379'
+    # BullMQ requires noeviction: an evicted key would silently lose a job.
+    command: redis-server --maxmemory-policy noeviction --save "" --appendonly no
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 30

@@ -19,6 +19,14 @@ function isOrigin(value) {
   }
 }
 
+function isRedisUrl(value) {
+  try {
+    return ['redis:', 'rediss:'].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
 /** "Name <user@host>" or "user@host" as { name?, email }, or null when it is neither. */
 function parseMailbox(value) {
   const match = value
@@ -82,9 +90,16 @@ const schema = z
       .default('https://router.project-osrm.org')
       .transform((v) => v.replace(/\/+$/, '')),
     // Path to the Firebase service account JSON (kept outside the repo). Unset or empty: push
-    // notifications are not sent.
     // notifications are not sent. Required in production.
     FIREBASE_SERVICE_ACCOUNT_PATH: optionalString(),
+    // Redis for the BullMQ notification queue. Required in production and wherever jobs are on.
+    REDIS_URL: optionalString(),
+    // 0 runs the API without the outbox relay and the notification worker: outbox rows are still
+    // written and wait as PENDING. On by default.
+    ENABLE_JOBS: z
+      .enum(['', '0', '1'])
+      .default('1')
+      .transform((v) => v !== '0'),
   })
   .refine((v) => v.NODE_ENV !== 'test' || v.TEST_DATABASE_URL, {
     path: ['TEST_DATABASE_URL'],
@@ -102,6 +117,13 @@ const schema = z
     if (v.MAIL_FROM && !parseMailbox(v.MAIL_FROM)) {
       issue('MAIL_FROM', 'must look like "CampusPool <sender@example.com>"');
     }
+    if (v.REDIS_URL && !isRedisUrl(v.REDIS_URL)) {
+      issue('REDIS_URL', 'must be a redis:// or rediss:// URL');
+    }
+    // Production always needs it (its own message below).
+    if (!v.REDIS_URL && v.ENABLE_JOBS !== false && v.NODE_ENV !== 'production') {
+      issue('REDIS_URL', 'is required unless ENABLE_JOBS=0 (start Redis with npm run db:test:up)');
+    }
   }, alwaysCheck)
   .superRefine((v, ctx) => {
     if (v.NODE_ENV !== 'production') return;
@@ -114,6 +136,7 @@ const schema = z
     // The default sender is not a real address; Brevo only sends from a verified one.
     if (!v.MAIL_FROM) required('MAIL_FROM');
     if (!v.FIREBASE_SERVICE_ACCOUNT_PATH) required('FIREBASE_SERVICE_ACCOUNT_PATH');
+    if (!v.REDIS_URL) required('REDIS_URL');
 
     const issue = (message) => ctx.addIssue({ code: 'custom', path: ['CORS_ORIGIN'], message });
     if (!v.CORS_ORIGIN) return required('CORS_ORIGIN');

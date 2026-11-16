@@ -5,6 +5,7 @@ const valid = {
   JWT_ACCESS_SECRET: 'a'.repeat(32),
   ALLOWED_EMAIL_DOMAIN: '@College.edu',
   SMTP_HOST: 'smtp.example.com',
+  REDIS_URL: 'redis://localhost:6380/1',
 };
 // What production needs on top of `valid`.
 const prod = {
@@ -27,7 +28,13 @@ describe('loadEnv', () => {
     loadEnv({ NODE_ENV: 'development' }, exit);
     expect(exit).toHaveBeenCalledWith(1);
     const message = errSpy.mock.calls[0][0];
-    for (const name of ['DATABASE_URL', 'JWT_ACCESS_SECRET', 'ALLOWED_EMAIL_DOMAIN', 'SMTP_HOST']) {
+    for (const name of [
+      'DATABASE_URL',
+      'JWT_ACCESS_SECRET',
+      'ALLOWED_EMAIL_DOMAIN',
+      'SMTP_HOST',
+      'REDIS_URL',
+    ]) {
       expect(message).toMatch(new RegExp(name));
     }
   });
@@ -111,13 +118,62 @@ describe('loadEnv for deployment', () => {
     expect(env.DIRECT_URL).toBeUndefined();
   });
 
-  it.each(['MAIL_FROM', 'FIREBASE_SERVICE_ACCOUNT_PATH'])('requires %s in production', (name) => {
-    for (const value of [undefined, '', '  ']) {
-      errSpy.mockClear();
-      const { exit, message } = load({ ...prod, [name]: value });
+  it.each(['MAIL_FROM', 'FIREBASE_SERVICE_ACCOUNT_PATH', 'REDIS_URL'])(
+    'requires %s in production',
+    (name) => {
+      for (const value of [undefined, '', '  ']) {
+        errSpy.mockClear();
+        const { exit, message } = load({ ...prod, [name]: value });
+        expect(exit).toHaveBeenCalledWith(1);
+        expect(message).toContain(`${name}: is required when NODE_ENV=production`);
+      }
+    },
+  );
+
+  describe('REDIS_URL and ENABLE_JOBS', () => {
+    const dev = { ...valid, NODE_ENV: 'development' };
+
+    it('jobs are on by default, and off only for 0', () => {
+      expect(load(dev).env.ENABLE_JOBS).toBe(true);
+      expect(load({ ...dev, ENABLE_JOBS: '' }).env.ENABLE_JOBS).toBe(true);
+      expect(load({ ...dev, ENABLE_JOBS: '1' }).env.ENABLE_JOBS).toBe(true);
+      expect(load({ ...dev, ENABLE_JOBS: '0' }).env.ENABLE_JOBS).toBe(false);
+      expect(load({ ...dev, ENABLE_JOBS: 'no' }).message).toMatch(/ENABLE_JOBS/);
+    });
+
+    it('outside production, REDIS_URL is required only while jobs are on', () => {
+      const { exit, message } = load({ ...dev, REDIS_URL: '' });
       expect(exit).toHaveBeenCalledWith(1);
-      expect(message).toContain(`${name}: is required when NODE_ENV=production`);
-    }
+      expect(message).toMatch(/REDIS_URL: is required unless ENABLE_JOBS=0/);
+
+      errSpy.mockClear();
+      const off = load({ ...dev, REDIS_URL: '', ENABLE_JOBS: '0' });
+      expect(off.exit).not.toHaveBeenCalled();
+      expect(off.env.REDIS_URL).toBeUndefined();
+    });
+
+    it('production requires it even with jobs off, and says so once', () => {
+      const { exit, message } = load({ ...prod, REDIS_URL: '', ENABLE_JOBS: '0' });
+      expect(exit).toHaveBeenCalledWith(1);
+      expect(message.match(/REDIS_URL/g)).toHaveLength(1);
+      errSpy.mockClear();
+      expect(load({ ...prod, REDIS_URL: '' }).message.match(/REDIS_URL/g)).toHaveLength(1);
+    });
+
+    it('accepts redis:// and rediss:// URLs and refuses anything else, without echoing it', () => {
+      for (const url of ['redis://red-abc123:6379', 'rediss://default:pw@host.example:6380/2']) {
+        const { env, exit } = load({ ...dev, REDIS_URL: url });
+        expect(exit).not.toHaveBeenCalled();
+        expect(env.REDIS_URL).toBe(url);
+      }
+      for (const url of ['localhost:6380', 'https://user:hunter2secret@host.example', 'red-abc']) {
+        errSpy.mockClear();
+        const { exit, message } = load({ ...dev, REDIS_URL: url });
+        expect(exit).toHaveBeenCalledWith(1);
+        expect(message).toContain('REDIS_URL: must be a redis:// or rediss:// URL');
+        expect(message).not.toContain('hunter2secret');
+      }
+    });
   });
 
   it('defaults MAIL_FROM and leaves Firebase off outside production', () => {
@@ -136,6 +192,7 @@ describe('loadEnv for deployment', () => {
       'BREVO_API_KEY',
       'MAIL_FROM',
       'FIREBASE_SERVICE_ACCOUNT_PATH',
+      'REDIS_URL',
       'CORS_ORIGIN',
     ]) {
       expect(message).toMatch(new RegExp(`- ${name}:`));
@@ -149,6 +206,8 @@ describe('loadEnv for deployment', () => {
       MAIL_FROM: 'not-an-address-secretish',
       TRUST_PROXY_HOPS: 'many-hops-value',
       DEBUG_CLIENT_IP: 'yes-debug-value',
+      REDIS_URL: 'not-a-redis-url-value',
+      ENABLE_JOBS: 'maybe-jobs-value',
       EMAIL_PROVIDER: 'brevo',
       BREVO_API_KEY: '',
     };

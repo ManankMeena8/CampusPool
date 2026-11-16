@@ -20,6 +20,8 @@ process.env.ROUTING_BASE_URL = 'https://osrm.test.invalid';
 // Push notifications are never sent from tests, whatever .env says (empty counts as unset, and
 // dotenv does not override a variable that is already set).
 process.env.FIREBASE_SERVICE_ACCOUNT_PATH = '';
+// The relay and the worker never start with the app in tests: the job tests build their own.
+process.env.ENABLE_JOBS = '0';
 
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 const LOCAL_TEST_DB = '/campuspool_test';
@@ -28,6 +30,15 @@ const LOCAL_TEST_DB = '/campuspool_test';
 function dbIdentity(url) {
   const u = new URL(url);
   return `${u.hostname.toLowerCase()}:${u.port || '5432'}${u.pathname}`;
+}
+
+/**
+ * A variable as backend/.env (the dev settings) has it. Read from the file itself: process.env
+ * already holds .env.test's values.
+ */
+function envFileValue(name) {
+  const envFile = path.resolve(__dirname, '../.env');
+  return fs.existsSync(envFile) ? dotenv.parse(fs.readFileSync(envFile))[name] : undefined;
 }
 
 function refuse(reason) {
@@ -48,11 +59,7 @@ function assertTestDatabase() {
     refuse('TEST_DATABASE_URL is not a valid URL');
   }
 
-  // Read the dev URL from the file itself: process.env.DATABASE_URL already holds .env.test's.
-  const envFile = path.resolve(__dirname, '../.env');
-  const devUrl = fs.existsSync(envFile)
-    ? dotenv.parse(fs.readFileSync(envFile)).DATABASE_URL
-    : undefined;
+  const devUrl = envFileValue('DATABASE_URL');
   if (devUrl && dbIdentity(devUrl) === dbIdentity(testUrl)) {
     refuse('TEST_DATABASE_URL is the dev DATABASE_URL from backend/.env');
   }
@@ -71,4 +78,47 @@ function assertTestDatabase() {
   process.env.DATABASE_URL = testUrl;
 }
 
+/** host:port/db of a Redis URL, ignoring credentials. */
+function redisIdentity(url) {
+  const u = new URL(url);
+  const db = u.pathname.replace(/^\//, '') || '0';
+  return `${u.hostname.toLowerCase()}:${u.port || '6379'}/${db}`;
+}
+
+/**
+ * The job tests run FLUSHDB, so they must only reach a test Redis: a local one that is not the
+ * database `npm run dev` uses, or a remote one explicitly allowed with ALLOW_REMOTE_TEST_DB=1.
+ * REDIS_URL must come from .env.test or the shell: left unset, src/config/env.js would load the
+ * dev one from .env.
+ */
+function assertTestRedis(devUrl = envFileValue('REDIS_URL')) {
+  const testUrl = process.env.REDIS_URL;
+  if (!testUrl) refuse('REDIS_URL is not set (copy it from .env.test.example to .env.test)');
+  let target;
+  try {
+    target = new URL(testUrl);
+  } catch {
+    refuse('REDIS_URL is not a valid URL');
+  }
+  if (!['redis:', 'rediss:'].includes(target.protocol)) refuse('REDIS_URL is not a redis:// URL');
+
+  let devIdentity;
+  try {
+    devIdentity = devUrl && redisIdentity(devUrl);
+  } catch {
+    devIdentity = undefined; // an unusable dev URL cannot be the one under test
+  }
+  if (devIdentity && devIdentity === redisIdentity(testUrl)) {
+    refuse('REDIS_URL is the dev REDIS_URL from backend/.env (tests use db 0, dev db 1)');
+  }
+  if (!LOCAL_HOSTS.includes(target.hostname) && process.env.ALLOW_REMOTE_TEST_DB !== '1') {
+    refuse(
+      `REDIS_URL is remote (${target.hostname}); set ALLOW_REMOTE_TEST_DB=1 if it is a test Redis`,
+    );
+  }
+}
+
 assertTestDatabase();
+assertTestRedis();
+
+module.exports = { assertTestDatabase, assertTestRedis };
